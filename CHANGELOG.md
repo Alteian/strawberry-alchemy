@@ -26,5 +26,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema module** — `BaseSchema` Pydantic base with `dump_for_db()`, `to_type()`, and skip-unloaded-relationships validator.
 - **CI workflow** — lint, test, build via GitHub Actions.
 
-[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.1...HEAD
 [0.1.0]: https://github.com/Alteian/strawberry-alchemy/releases/tag/v0.1.0
