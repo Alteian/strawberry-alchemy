@@ -1,4 +1,3 @@
-import inspect as py_inspect
 import uuid  # noqa: TC003
 from collections.abc import Iterable
 from datetime import datetime  # noqa: TC003
@@ -10,6 +9,12 @@ from strawberry.types import Info
 
 from strawberry_alchemy.filtering.access_control import AccessControlFilter
 from strawberry_alchemy.mapping import map_sqlalchemy_list_to_types
+from strawberry_alchemy.mapping.output_normalization import (
+    enrich_mapping_from_schema,
+    get_type_init_params,
+    normalize_unset_scalars_on_instance,
+    prepare_output_constructor_data,
+)
 from strawberry_alchemy.optimizer import QueryOptimizer
 
 from .connection import OptimizedListConnection
@@ -31,17 +36,25 @@ class BaseNodeType(Node):
             raise NotImplementedError(f"Subclass '{cls.__name__}' must define an 'access_filter' ClassVar.")
         cls.model_class = cls.access_filter.model_class
 
+    def __post_init__(self) -> None:
+        normalize_unset_scalars_on_instance(self, type(self))
+
     @classmethod
     def from_schema(cls, schema: Any, **kwargs: Any) -> Self:
-        try:
-            init_params = set(py_inspect.signature(cls.__init__).parameters.keys()) - {"self"}
-        except (ValueError, TypeError):
-            init_params = {f.name for f in cls.__strawberry_definition__.fields}
+        init_params = get_type_init_params(cls)
 
-        schema_data = schema.model_dump(exclude_unset=True)
+        exclude = kwargs.pop("exclude", None)
+        schema_data = schema.model_dump(exclude_unset=True, exclude=exclude)
         mapped_data = {k: v for k, v in schema_data.items() if k in init_params}
         mapped_data.update(kwargs)
-        return cls(**mapped_data)
+        enrich_mapping_from_schema(schema, mapped_data, init_params)
+        mapped_data = prepare_output_constructor_data(
+            cls,
+            mapped_data,
+            init_params=init_params,
+        )
+        instance = cls(**mapped_data)
+        return instance
 
     @classmethod
     async def _get_optimized_result(cls, info: Info, **query_kwargs: Any) -> Any:

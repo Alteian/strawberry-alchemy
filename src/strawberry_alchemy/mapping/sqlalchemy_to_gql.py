@@ -1,13 +1,37 @@
 import asyncio
-import inspect as py_inspect
 from typing import Any, TypeVar
 
 import strawberry
 from sqlalchemy.inspection import inspect
 from strawberry.relay import GlobalID
 
+from strawberry_alchemy.mapping.output_normalization import (
+    get_type_init_params,
+    prepare_output_constructor_data,
+)
+
 T = TypeVar("T")
 UNSET = strawberry.UNSET
+
+
+def _requested_leaf_fields(selected_fields: dict[str, bool | dict]) -> set[str]:
+    return {name for name, selected in selected_fields.items() if selected is True}
+
+
+def _ensure_requested_model_scalars_mapped(
+    *,
+    type_data: dict[str, Any],
+    requested_fields: set[str],
+    insp: Any,
+) -> None:
+    for field_name in requested_fields:
+        if field_name in type_data:
+            continue
+        if field_name not in insp.attrs:
+            continue
+        if field_name in insp.mapper.relationships:
+            continue
+        type_data[field_name] = None
 
 
 def create_global_id_from_field(field_name: str, value: Any) -> GlobalID:
@@ -32,9 +56,10 @@ async def map_sqlalchemy_to_type[T](
     fields_to_process = dict(selected_fields)
     if "id" not in fields_to_process:
         fields_to_process["id"] = True
+    requested_leaf_fields = _requested_leaf_fields(fields_to_process)
 
     for field_name, is_selected in fields_to_process.items():
-        if not is_selected:
+        if is_selected is not True and not isinstance(is_selected, dict):
             continue
 
         if field_name not in insp.attrs:
@@ -107,13 +132,19 @@ async def map_sqlalchemy_to_type[T](
             elif value is None:
                 type_data[field_name] = None
 
-    try:
-        init_params = set(py_inspect.signature(target_type.__init__).parameters.keys()) - {"self"}
-    except (ValueError, TypeError):
-        init_params = None
+    _ensure_requested_model_scalars_mapped(
+        type_data=type_data,
+        requested_fields=requested_leaf_fields,
+        insp=insp,
+    )
 
-    if init_params:
-        type_data = {k: v for k, v in type_data.items() if k in init_params}
+    init_params = get_type_init_params(target_type)
+    type_data = prepare_output_constructor_data(
+        target_type,
+        type_data,
+        requested_fields=requested_leaf_fields,
+        init_params=init_params,
+    )
 
     try:
         type_instance = target_type(**type_data)

@@ -14,7 +14,7 @@ class IsAuthenticated:
 
     def has_permission(self, info: strawberry.Info, **_kwargs: Any) -> bool:
         ctx: PermissionContextLike = info.context
-        return ctx.current_user is not None
+        return ctx.current_user is not None or getattr(ctx, "identity", None) is not None
 
 
 class RolePermission:
@@ -24,7 +24,7 @@ class RolePermission:
 
     def has_permission(self, info: strawberry.Info, **_kwargs: Any) -> bool:
         ctx: PermissionContextLike = info.context
-        user = ctx.current_user
+        user = ctx.current_user or getattr(ctx, "identity", None)
         if user is None:
             return False
         return getattr(user, "role", None) == self.role
@@ -48,7 +48,7 @@ class OwnerPermission:
         **_kwargs: Any,
     ) -> bool:
         ctx: PermissionContextLike = info.context
-        user = ctx.current_user
+        user = ctx.current_user or getattr(ctx, "identity", None)
         if user is None:
             return False
 
@@ -86,7 +86,7 @@ class ObjectAccessPermission:
         **_kwargs: Any,
     ) -> bool:
         ctx: PermissionContextLike = info.context
-        user = ctx.current_user
+        user = ctx.current_user or getattr(ctx, "identity", None)
         if user is None:
             return False
         if resource_instances is None:

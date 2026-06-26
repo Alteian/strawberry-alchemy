@@ -239,7 +239,7 @@ class PostMutations:
     @strawberry.mutation(permission_classes=[IsAuthenticated])
     async def create_post(self, info: Info, input: CreatePostInput) -> PostType:
         session = await info.context.get_session()
-        user = await info.context.user
+        user = await info.context.identity
         schema = PostSchema(title=input.title, body=input.body, user_id=user.id)
         result = await PostRepository(session).create(schema=schema)
         return result.to_type(PostType)

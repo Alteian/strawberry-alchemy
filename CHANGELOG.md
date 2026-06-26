@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-06-25
+
+### Fixed
+
+- Datetime serialization
+- coercing unsets
+- optional exclude
+
+## [0.1.1] — 2026-06-14
+
+### Added
+
+- Added a complete usage example to the README.
+
+### Documentation
+
+- Improved setup and usage documentation.
+- Documented automatic query optimization features.
+
 ## [0.1.0] — 2026-06-13
 
 ### Added
@@ -26,18 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema module** — `BaseSchema` Pydantic base with `dump_for_db()`, `to_type()`, and skip-unloaded-relationships validator.
 - **CI workflow** — lint, test, build via GitHub Actions.
 
-## [0.1.1] — 2026-06-14
-
-### Added
-
-- Added a complete usage example to the README.
-
-### Documentation
-
--  Improved setup and usage documentation.
--  Documented automatic query optimization features.
-
-
-[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Alteian/strawberry-alchemy/releases/tag/v0.1.0

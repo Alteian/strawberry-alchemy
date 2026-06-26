@@ -12,6 +12,7 @@ from sqlalchemy.orm import RelationshipProperty, defer, selectinload
 from sqlalchemy.sql import func, select
 from strawberry import UNSET
 from strawberry.types import Info
+from strawberry.types.nodes import FragmentSpread, InlineFragment
 
 from strawberry_alchemy.enums import Ordering
 from strawberry_alchemy.filtering.filter_builder import FilterBuilder
@@ -78,6 +79,19 @@ class QueryOptimizer:
     def _register_default_filters(self) -> None:
         pass
 
+    async def _get_identity(self) -> Any:
+        ctx = self.info.context
+        for attr in ("identity", "user"):
+            try:
+                value = getattr(ctx, attr)
+            except Exception:
+                continue
+            if value is not None:
+                if hasattr(value, "__await__"):
+                    return await value
+                return value
+        return None
+
     def register_access_filter(self, model_class: type, filter_class: type) -> None:
         self.access_filters[model_class] = filter_class
 
@@ -96,7 +110,7 @@ class QueryOptimizer:
     async def apply_access_control(self, query: Any, model: type[Any]) -> Any:
         access_filter = self.get_access_filter(model)
         if access_filter is not None:
-            context_user = await self.info.context.user
+            context_user = await self._get_identity()
             query = await cast("Any", access_filter).apply_filter(query, model, context_user)
         return query
 
@@ -165,12 +179,15 @@ class QueryOptimizer:
     def process_selected_fields(self, selected_fields: list) -> dict:
         result: dict[str, Any] = {}
         for f in selected_fields:
+            if isinstance(f, FragmentSpread | InlineFragment):
+                result.update(self.process_selected_fields(f.selections))
+                continue
+
             key = f.alias or f.name
             normalized_key = self.normalize_field_name(key)
 
             if f.selections:
-                nested = self.process_selected_fields(f.selections)
-                result[normalized_key] = nested
+                result[normalized_key] = self.process_selected_fields(f.selections)
             else:
                 result[normalized_key] = True
 
@@ -246,8 +263,10 @@ class QueryOptimizer:
         requested_scalar_attributes: set[Any] = set()
         all_model_attributes = self.get_all_model_attributes(model)
 
-        for field_name in selected_fields:
+        for field_name, field_value in selected_fields.items():
             if field_name in ("__typename", "edges", "pageInfo", "totalCount", "cursor"):
+                continue
+            if field_value is not True:
                 continue
 
             column_name, attr = self.get_model_attribute(model, field_name)
@@ -601,7 +620,7 @@ class QueryOptimizer:
     ) -> list:
         load_options: list[Any] = []
         all_attributes = self.get_all_model_attributes(model)
-        requested_scalar_keys: set[str] = set()
+        requested_attrs = self.collect_requested_fields(selected_fields, model)
         _analyzer = self.analyzer
         _skip_keys = frozenset(("__typename", "edges", "pageInfo", "totalCount"))
 
@@ -646,11 +665,7 @@ class QueryOptimizer:
                     if _analyzer:
                         _analyzer.record_relationship(field_name)
                         _analyzer.record_load_strategy(field_name, "selectinload")
-            else:
-                if column_name in all_attributes:
-                    requested_scalar_keys.add(column_name)
 
-        requested_attrs = {all_attributes[k] for k in requested_scalar_keys}
         deferred_keys: list[str] = []
         for key, attr in all_attributes.items():
             if attr not in requested_attrs:
@@ -708,7 +723,7 @@ class QueryOptimizer:
 
         context_user = None
         if deps.needs_current_user or filter_context_user or apply_access_control:
-            context_user = await self.info.context.user
+            context_user = await self._get_identity()
 
         user_id = None
         if deps.needs_current_user and context_user and hasattr(context_user, "id"):

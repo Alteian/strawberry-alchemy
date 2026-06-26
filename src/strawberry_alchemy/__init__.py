@@ -39,6 +39,7 @@ from strawberry_alchemy.optimizer import (
 from strawberry_alchemy.permissions import (
     BasePermissionResolver,
     HasId,
+    IdentityLike,
     IsAuthenticated,
     ModelRegistryLike,
     ObjectAccessPermission,
@@ -89,6 +90,7 @@ __all__ = (
     "FilterBuilder",
     "FilterOperators",
     "HasId",
+    "IdentityLike",
     "IDFilter",
     "IntFilter",
     "IsAuthenticated",

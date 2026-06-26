@@ -19,6 +19,7 @@ from strawberry_alchemy.permissions.resource_bag import (
 )
 from strawberry_alchemy.permissions.types import (
     HasId,
+    IdentityLike,
     ModelRegistryLike,
     PermissionContextLike,
     UserLike,
@@ -27,6 +28,7 @@ from strawberry_alchemy.permissions.types import (
 __all__ = (
     "BasePermissionResolver",
     "HasId",
+    "IdentityLike",
     "IsAuthenticated",
     "ModelRegistryLike",
     "ObjectAccessPermission",

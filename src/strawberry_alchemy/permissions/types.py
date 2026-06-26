@@ -7,6 +7,13 @@ class HasId(Protocol):
     id: UUID | str | int
 
 
+# NOTE: Experimental
+@runtime_checkable
+class IdentityLike(Protocol):
+    id: UUID | str | int
+
+
+# NOTE: backwards compatibiltiy
 @runtime_checkable
 class UserLike(Protocol):
     id: UUID | str | int
@@ -16,7 +23,10 @@ class UserLike(Protocol):
 @runtime_checkable
 class PermissionContextLike(Protocol):
     @property
-    def current_user(self) -> UserLike: ...
+    def current_user(self) -> UserLike | None: ...
+
+    @property
+    def identity(self) -> IdentityLike | None: ...
 
 
 @runtime_checkable
