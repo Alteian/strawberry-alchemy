@@ -105,8 +105,31 @@ class AnnotateAncestry:
         return self.relationship
 
 
+@dataclass(frozen=True)
+class SelectColumns:
+    """Undefer scalar columns on the *current* model when a computed field is selected.
+
+    Use when a GraphQL resolver needs same-row columns (e.g. ``s3_key`` / ``variants``)
+    that the client did not select — without a per-row repository hydrate.
+    """
+
+    fields: tuple[str, ...]
+
+    def __init__(self, *fields: str) -> None:
+        if not fields:
+            raise ValueError("SelectColumns requires at least one column name")
+        object.__setattr__(self, "fields", fields)
+
+
 OptimizerHint = (
-    str | PrefetchRelated | AnnotateExists | AnnotateAnyExists | AnnotateCount | AnnotateCustom | AnnotateAncestry
+    str
+    | PrefetchRelated
+    | SelectColumns
+    | AnnotateExists
+    | AnnotateAnyExists
+    | AnnotateCount
+    | AnnotateCustom
+    | AnnotateAncestry
 )
 
 
@@ -191,6 +214,7 @@ def source_path_to_dependency_tree(source_path: str) -> dict[str, Any]:
 def optimize_field(
     *args: str
     | PrefetchRelated
+    | SelectColumns
     | AnnotateExists
     | AnnotateAnyExists
     | AnnotateCount
@@ -205,14 +229,22 @@ def optimize_field(
                 hints.append(PrefetchRelated(relationship=arg))
             elif isinstance(
                 arg,
-                (PrefetchRelated, AnnotateExists, AnnotateAnyExists, AnnotateCount, AnnotateCustom, AnnotateAncestry),
+                (
+                    PrefetchRelated,
+                    SelectColumns,
+                    AnnotateExists,
+                    AnnotateAnyExists,
+                    AnnotateCount,
+                    AnnotateCustom,
+                    AnnotateAncestry,
+                ),
             ):
                 hints.append(arg)
             else:
                 raise TypeError(
                     f"Invalid argument type for optimize_field: {type(arg)}. "
-                    f"Expected str, PrefetchRelated, AnnotateExists, AnnotateAnyExists, "
-                    f"AnnotateCount, AnnotateCustom, or AnnotateAncestry."
+                    f"Expected str, PrefetchRelated, SelectColumns, AnnotateExists, "
+                    f"AnnotateAnyExists, AnnotateCount, AnnotateCustom, or AnnotateAncestry."
                 )
         for rel, fields in kwargs.items():
             hints.append(PrefetchRelated(relationship=rel, fields=fields))

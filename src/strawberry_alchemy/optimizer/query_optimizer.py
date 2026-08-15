@@ -26,6 +26,7 @@ from .prefetch import (
     AnnotateExists,
     PrefetchRelated,
     ResolvedDependencies,
+    SelectColumns,
     get_prefetch_map,
     merge_dependency_trees,
     normalize_dependency_fields,
@@ -345,10 +346,23 @@ class QueryOptimizer:
                     hint, (AnnotateExists, AnnotateAnyExists, AnnotateCount, AnnotateCustom, AnnotateAncestry)
                 ):
                     result.annotations.append(hint)
+                elif isinstance(hint, SelectColumns):
+                    self._resolve_select_columns_hint(hint, result)
                 elif isinstance(hint, PrefetchRelated):
                     self._resolve_prefetch_hint(hint, result, model)
 
         return result
+
+    def _resolve_select_columns_hint(
+        self,
+        hint: SelectColumns,
+        result: ResolvedDependencies,
+    ) -> None:
+        for column_name in hint.fields:
+            existing = result.augmented_fields.get(column_name)
+            if isinstance(existing, dict):
+                continue
+            result.augmented_fields[column_name] = True
 
     def _resolve_prefetch_hint(
         self,

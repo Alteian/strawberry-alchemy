@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-08-15
+
+### Added
+
+- **`SelectColumns`** — `@optimize_field(SelectColumns("col_a", "col_b"))` undeferrs
+  same-model scalar columns when a computed GraphQL field is selected, so resolvers
+  can read deferred storage columns without per-row repository hydrates.
+
 ## [0.1.2] — 2026-06-25
 
 ### Fixed
@@ -45,7 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema module** — `BaseSchema` Pydantic base with `dump_for_db()`, `to_type()`, and skip-unloaded-relationships validator.
 - **CI workflow** — lint, test, build via GitHub Actions.
 
-[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Alteian/strawberry-alchemy/releases/tag/v0.1.0
