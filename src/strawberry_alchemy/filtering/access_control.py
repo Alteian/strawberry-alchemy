@@ -8,9 +8,10 @@ class AccessControlMeta(type):
         bases: tuple[type, ...],
         dct: dict[str, Any],
     ) -> None:
+        # NOTE: We can remove this in the future and come up with better solution. This is opinionated convention.
         if name != "AccessControlFilter" and not name.endswith("AccessFilter"):
             raise TypeError(f"Subclass {name} must end with 'AccessFilter'")
-        super().__init__(name, bases, dct)
+        super().__init__(name, bases, dct)  # type: ignore
 
 
 class AccessControlFilter(metaclass=AccessControlMeta):

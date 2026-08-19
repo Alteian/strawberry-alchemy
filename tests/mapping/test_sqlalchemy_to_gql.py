@@ -11,6 +11,7 @@ from sqlalchemy import DateTime, String, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, defer, mapped_column
+from strawberry.relay import GlobalID
 
 from strawberry_alchemy.filtering.access_control import AccessControlFilter
 from strawberry_alchemy.mapping.sqlalchemy_to_gql import UNSET, map_sqlalchemy_to_type
@@ -42,11 +43,35 @@ class PersonAccessFilter(AccessControlFilter):
         return query
 
 
+class LockedPersonModel(_TestBase):
+    __tablename__ = "mapper_test_locked_people"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    locked_by: Mapped[UUID | None] = mapped_column(nullable=True)
+
+
+class LockedPersonAccessFilter(AccessControlFilter):
+    model_class = LockedPersonModel
+
+    @staticmethod
+    async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
+        return query
+
+
 @strawberry.type
 class PersonType(BaseNodeType):
     access_filter: ClassVar[type[AccessControlFilter]] = PersonAccessFilter
 
     name: str
+
+
+@strawberry.type
+class LockedPersonType(BaseNodeType):
+    access_filter: ClassVar[type[AccessControlFilter]] = LockedPersonAccessFilter
+
+    name: str
+    locked_by: GlobalID | None = None
 
 
 class FakeInfo:
@@ -119,6 +144,29 @@ def test_direct_constructor_normalizes_nullable_unset_audit_fields() -> None:
     assert mapped.created_at is None
     assert mapped.updated_at is not UNSET
     assert mapped.updated_at is None
+
+
+@pytest.mark.asyncio
+async def test_map_sqlalchemy_to_type_global_id_annotation_without_id_suffix(
+    session: AsyncSession,
+) -> None:
+    session.add(LockedPersonModel(name="Alice", locked_by=uuid4()))
+    await session.commit()
+
+    result = await session.execute(select(LockedPersonModel))
+    instance = result.scalar_one()
+
+    mapped = await map_sqlalchemy_to_type(
+        instance,
+        cast("Any", FakeInfo()),
+        LockedPersonType,
+        {"id": True, "name": True, "locked_by": True},
+    )
+
+    assert mapped is not None
+    assert isinstance(mapped.locked_by, GlobalID)
+    assert mapped.locked_by.type_name == "LockedByType"
+    assert mapped.locked_by.node_id == str(instance.locked_by)
 
     optimizer = QueryOptimizer(info=cast("Any", object()), session=cast("Any", object()))
     selected_fields = {

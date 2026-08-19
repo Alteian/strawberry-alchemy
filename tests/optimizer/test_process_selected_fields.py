@@ -99,6 +99,19 @@ def test_process_selected_fields_nested_fields_in_fragment(optimizer: QueryOptim
     }
 
 
+def test_extract_model_fields_keeps_domain_edges_field(optimizer: QueryOptimizer) -> None:
+    selected = {"id": True, "edges": {"id": True, "target_node_id": True}}
+    assert optimizer.extract_model_fields(selected) == {
+        "id": True,
+        "edges": {"id": True, "target_node_id": True},
+    }
+
+
+def test_extract_model_fields_still_unwraps_relay_connection(optimizer: QueryOptimizer) -> None:
+    selected = {"edges": {"node": {"id": True, "name": True}}}
+    assert optimizer.extract_model_fields(selected) == {"id": True, "name": True}
+
+
 class _TestBase(DeclarativeBase):
     pass
 

@@ -154,7 +154,9 @@ class QueryOptimizer:
                 if isinstance(node, dict):
                     nested = self.extract_model_fields(node, level + 1)
                     model_fields.update(nested)
-                continue
+                    continue
+                # NOTE: real model relationship/field named "edges" (non-Relay) falls - exempli gratia: workflow edges and nodes...
+                # through to the generic dict handling below.
 
             if normalized_key == "items":
                 if isinstance(value, dict):
@@ -265,7 +267,7 @@ class QueryOptimizer:
         all_model_attributes = self.get_all_model_attributes(model)
 
         for field_name, field_value in selected_fields.items():
-            if field_name in ("__typename", "edges", "pageInfo", "totalCount", "cursor"):
+            if field_name in ("__typename", "pageInfo", "totalCount", "cursor"):
                 continue
             if field_value is not True:
                 continue
@@ -287,7 +289,7 @@ class QueryOptimizer:
         current_path = f"{path}.{model.__name__}" if path else model.__name__
 
         for field_name, field_value in selected_fields.items():
-            if field_name in ("__typename", "edges", "pageInfo", "totalCount", "cursor"):
+            if field_name in ("__typename", "pageInfo", "totalCount", "cursor"):
                 continue
 
             column_name, attr = self.get_model_attribute(model, field_name)
@@ -636,7 +638,7 @@ class QueryOptimizer:
         all_attributes = self.get_all_model_attributes(model)
         requested_attrs = self.collect_requested_fields(selected_fields, model)
         _analyzer = self.analyzer
-        _skip_keys = frozenset(("__typename", "edges", "pageInfo", "totalCount"))
+        _skip_keys = frozenset(("__typename", "pageInfo", "totalCount"))
 
         for field_name, subfields in selected_fields.items():
             if field_name in _skip_keys:

@@ -35,7 +35,7 @@ def _ensure_requested_model_scalars_mapped(
 
 
 def create_global_id_from_field(field_name: str, value: Any) -> GlobalID:
-    base_name = field_name[:-3]
+    base_name = field_name.removesuffix("_id")
     type_name = f"{base_name.replace('_', ' ').title().replace(' ', '')}Type"
     return GlobalID(type_name=type_name, node_id=str(value))
 
@@ -108,16 +108,12 @@ async def map_sqlalchemy_to_type[T](
                 else:
                     type_data[field_name] = None
         else:
-            if field_name.endswith("_id") and value is not None and value is not UNSET:
-                annotation = type_annotations.get(field_name, "")
-                annotation_str = str(annotation)
+            annotation = type_annotations.get(field_name)
+            annotation_str = str(annotation) if annotation is not None else ""
 
-                if "GlobalID" in annotation_str:
-                    type_data[field_name] = create_global_id_from_field(field_name, value)
-                else:
-                    type_data[field_name] = value
+            if value is not None and value is not UNSET and "GlobalID" in annotation_str:
+                type_data[field_name] = create_global_id_from_field(field_name, value)
             elif value is not None and value is not UNSET:
-                annotation = type_annotations.get(field_name)
                 if (
                     isinstance(value, dict)
                     and annotation is not None
