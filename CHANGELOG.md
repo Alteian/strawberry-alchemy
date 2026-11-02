@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-02
+
+### Added
+
+- **Typed selection helpers** — `FieldPath`, `FieldSelection`, `RelayConnectionSelection`,
+  `parse_selection_tree`, `extract_at_path` (Relay `edges`/`node` vs domain fields).
+- **`CUSTOM_FILTERS` on `BaseNodeType`** — auto-wires `_custom_filters_registry` for the
+  query optimizer when set on a subclass.
+- **`BaseRepository` ClassVar constructor** — declare `model_cls` / `schema_cls` on the
+  subclass and construct with `SomeRepository(session)` (explicit ctor args still work).
+
+### Changed
+
+- Dependency floors: `strawberry-graphql>=0.339.1`, `sqlalchemy[asyncio]>=2.1.6`,
+  `pydantic>=2.14.2`, `python-dateutil>=4.0`.
+- `resolve_connection` now takes `db_execution_lock` like node/list resolve.
+- `access_filter` accepts a filter **class** or instance.
+
+### Fixed
+
+- **Root / nested `OR` and `AND`** — multi-field branches are `and_`-combined inside each
+  arm instead of being flattened into sibling OR/AND clauses; `build_filter_dict`
+  preserves `AND` as a list of branch dicts.
+
 ## [0.1.6] — 2026-11-02
 
 ### Added

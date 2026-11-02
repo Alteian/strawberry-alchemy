@@ -1,4 +1,4 @@
-"""AND/OR filter semantics — known bugs tracked for 0.2.0."""
+"""AND/OR filter semantics."""
 
 from __future__ import annotations
 
@@ -40,13 +40,9 @@ def _clause_as_str(expr: Any) -> str:
     return str(expr.compile(compile_kwargs={"literal_binds": True}))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Multi-field OR branches are flattened into sibling ORs; fix in 0.2.0",
-)
 @pytest.mark.asyncio
 async def test_root_or_multi_field_branch_ands_fields_inside_arm() -> None:
-    """One OR arm with two fields must be OR(AND(title, status)), not OR(title, status)."""
+    """One OR arm with two fields must be OR(AND(title, status), title)."""
     builder = FilterBuilder()
     filters = {
         "OR": [
@@ -59,16 +55,11 @@ async def test_root_or_multi_field_branch_ands_fields_inside_arm() -> None:
     assert expr is not None
     sql = _clause_as_str(expr)
 
-    # Expected shape: (title = 'Hello' AND status = 'draft') OR (title = 'World')
     assert " OR " in sql
     assert " AND " in sql
     assert sql.count("title") >= 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="build_filter_dict merges AND list items with dict.update; fix in 0.2.0",
-)
 def test_build_filter_dict_preserves_and_as_list_of_branches() -> None:
     builder = FilterBuilder()
     filt = PostFilter(
@@ -84,10 +75,6 @@ def test_build_filter_dict_preserves_and_as_list_of_branches() -> None:
     assert len(data["AND"]) == 2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Root OR from strawberry inputs loses multi-field branch grouping; fix in 0.2.0",
-)
 @pytest.mark.asyncio
 async def test_strawberry_root_or_round_trip_multi_field_branch() -> None:
     builder = FilterBuilder()
@@ -104,7 +91,6 @@ async def test_strawberry_root_or_round_trip_multi_field_branch() -> None:
     expr = await builder.build_filters(PostModel, data)
     assert expr is not None
 
-    # Compile against a select so we exercise the expression tree
     stmt = select(PostModel).where(expr)
     sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "draft" in sql

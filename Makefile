@@ -74,12 +74,12 @@ check-versions: ## Print toolchain versions
 # =============================================================================
 
 lint: ## Ruff check + format check
-	uv run ruff check .
-	uv run ruff format --check .
+	uv run ruff check src tests
+	uv run ruff format --check src tests
 
 format: ## Auto-fix lint + format
-	uv run ruff check --fix .
-	uv run ruff format .
+	uv run ruff check --fix src tests
+	uv run ruff format src tests
 
 typecheck: ## mypy on src/
 	uv run mypy src/

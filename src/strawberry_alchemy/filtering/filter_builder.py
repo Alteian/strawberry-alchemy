@@ -138,6 +138,14 @@ class FilterBuilder:
         operator_func = FilterOperators.LOOKUP_OPERATORS[actual_lookup]
         return operator_func(model_field, parsed_value)
 
+    @staticmethod
+    def _combine_expressions(expressions: list[Any], combiner: Any) -> Any | None:
+        if not expressions:
+            return None
+        if len(expressions) == 1:
+            return expressions[0]
+        return combiner(*expressions)
+
     async def build_filters(
         self,
         model: type[Any],
@@ -146,44 +154,39 @@ class FilterBuilder:
         if not filters:
             return None
 
-        async def process_conditions(conditions: dict[str, Any] | list[dict[str, Any]]) -> list[BinaryExpression]:
-            result = []
+        async def process_branch(branch: dict[str, Any]) -> Any | None:
+            """Build one logical branch: field filters AND nested AND/OR groups."""
+            return self._combine_expressions(await process_conditions(branch), and_)
+
+        async def process_combiner_value(value: Any, combiner: Any) -> Any | None:
+            """Combine list/dict arms with or_/and_ without flattening multi-field arms."""
+            arms: list[Any] = []
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        arm = await process_branch(item)
+                    else:
+                        continue
+                    if arm is not None:
+                        arms.append(arm)
+            elif isinstance(value, dict):
+                arm = await process_branch(value)
+                if arm is not None:
+                    arms.append(arm)
+            return self._combine_expressions(arms, combiner)
+
+        async def process_conditions(conditions: dict[str, Any] | list[dict[str, Any]]) -> list[Any]:
+            result: list[Any] = []
 
             async def process_condition(field: str, value: Any) -> None:
                 if field == "AND":
-                    and_conditions = []
-                    if isinstance(value, list):
-                        for and_item in value:
-                            and_expr = await process_conditions(and_item)
-                            if isinstance(and_expr, list):
-                                and_conditions.extend(and_expr)
-                            else:
-                                and_conditions.append(and_expr)
-                    elif isinstance(value, dict):
-                        and_expr = await process_conditions(value)
-                        if isinstance(and_expr, list):
-                            and_conditions.extend(and_expr)
-                        else:
-                            and_conditions.append(and_expr)
-                    if and_conditions:
-                        result.append(and_(*and_conditions))
+                    expr = await process_combiner_value(value, and_)
+                    if expr is not None:
+                        result.append(expr)
                 elif field == "OR":
-                    or_conditions = []
-                    if isinstance(value, list):
-                        for or_item in value:
-                            or_expr = await process_conditions(or_item)
-                            if isinstance(or_expr, list):
-                                or_conditions.extend(or_expr)
-                            else:
-                                or_conditions.append(or_expr)
-                    elif isinstance(value, dict):
-                        or_expr = await process_conditions(value)
-                        if isinstance(or_expr, list):
-                            or_conditions.extend(or_expr)
-                        else:
-                            or_conditions.append(or_expr)
-                    if or_conditions:
-                        result.append(or_(*or_conditions))
+                    expr = await process_combiner_value(value, or_)
+                    if expr is not None:
+                        result.append(expr)
                 else:
                     expr = await self.build_field_filter(model, field, value)
                     if expr is not None:
@@ -199,29 +202,23 @@ class FilterBuilder:
 
             return result
 
-        root_conditions = []
+        root_conditions: list[Any] = []
 
         for field, value in filters.items():
             if field == "AND":
-                and_conditions = await process_conditions(value)
-                if and_conditions:
-                    root_conditions.append(and_(*and_conditions))
+                expr = await process_combiner_value(value, and_)
+                if expr is not None:
+                    root_conditions.append(expr)
             elif field == "OR":
-                or_conditions = await process_conditions(value)
-                if or_conditions:
-                    root_conditions.append(or_(*or_conditions))
+                expr = await process_combiner_value(value, or_)
+                if expr is not None:
+                    root_conditions.append(expr)
             else:
                 expr = await self.build_field_filter(model, field, value)
                 if expr is not None:
                     root_conditions.append(expr)
 
-        if root_conditions:
-            if len(root_conditions) == 1:
-                return root_conditions[0]
-            else:
-                return and_(*root_conditions)
-
-        return None
+        return self._combine_expressions(root_conditions, and_)
 
     def build_filter_dict(self, filters: Any | None) -> dict[str, Any]:
         if filters is None or filters == strawberry.UNSET:
@@ -239,17 +236,16 @@ class FilterBuilder:
     def process_filter_object(
         self, filter_obj: Any, filter_dict: dict[str, Any], add_filter: Callable, parent_key: str = ""
     ) -> None:
-        nested_and_filters = {}
-        nested_or_filters = []
+        nested_and_filters: list[dict[str, Any]] = []
+        nested_or_filters: list[dict[str, Any]] = []
 
         if hasattr(filter_obj, "OR") and filter_obj.OR is not None and filter_obj.OR != strawberry.UNSET:
-            or_conditions = filter_obj.OR
-            [nested_or_filters.append(self.build_filter_dict(or_condition)) for or_condition in or_conditions]
+            for or_condition in filter_obj.OR:
+                nested_or_filters.append(self.build_filter_dict(or_condition))
 
         if hasattr(filter_obj, "AND") and filter_obj.AND is not None and filter_obj.AND != strawberry.UNSET:
-            and_conditions = filter_obj.AND
-            for and_condition in and_conditions:
-                nested_and_filters.update(self.build_filter_dict(and_condition))
+            for and_condition in filter_obj.AND:
+                nested_and_filters.append(self.build_filter_dict(and_condition))
 
         _excluded_attrs = {
             "type_name",

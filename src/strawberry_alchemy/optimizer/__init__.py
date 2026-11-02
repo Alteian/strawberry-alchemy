@@ -16,6 +16,15 @@ from .prefetch import (
 )
 from .query_analyzer import QueryAnalyzer, QueryEvent, QueryReport
 from .query_optimizer import QueryOptimizer, QueryResult
+from .selection import (
+    FieldPath,
+    FieldSelection,
+    LeafSelection,
+    RelayConnectionSelection,
+    extract_at_path,
+    parse_selection_tree,
+    selection_to_model_fields,
+)
 
 __all__ = (
     "AnnotateAncestry",
@@ -23,18 +32,25 @@ __all__ = (
     "AnnotateCount",
     "AnnotateCustom",
     "AnnotateExists",
+    "FieldPath",
+    "FieldSelection",
+    "LeafSelection",
     "PrefetchRelated",
     "QueryAnalyzer",
     "QueryEvent",
     "QueryOptimizer",
     "QueryReport",
     "QueryResult",
+    "RelayConnectionSelection",
     "ResolvedDependencies",
     "SelectColumns",
     "build_recursive_dependency_tree",
+    "extract_at_path",
     "get_prefetch_map",
     "merge_dependency_trees",
     "normalize_dependency_fields",
     "optimize_field",
+    "parse_selection_tree",
+    "selection_to_model_fields",
     "source_path_to_dependency_tree",
 )

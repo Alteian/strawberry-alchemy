@@ -169,19 +169,12 @@ def get_graphql_type_from_sqlalchemy(info: strawberry.Info, instance: Any) -> ty
 
 
 def extract_fields_at_path(selected_fields: dict, path: str) -> dict:
+    from strawberry_alchemy.optimizer.selection import extract_at_path
+
     if not path:
         return selected_fields
 
-    parts = path.split(".")
-    current = selected_fields
-
-    for part in parts:
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            return {}
-
-    return current if isinstance(current, dict) else {}
+    return extract_at_path(selected_fields, path)
 
 
 def extract_nested_fields(selected_fields: dict[str, bool | dict], field_path: str) -> dict[str, bool | dict]:

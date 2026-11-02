@@ -1,5 +1,5 @@
 import uuid  # noqa: TC003
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime  # noqa: TC003
 from typing import Any, ClassVar, Self
 
@@ -27,14 +27,22 @@ class BaseNodeType(Node):
     created_at: datetime | None = strawberry.UNSET
     updated_at: datetime | None = strawberry.UNSET
 
-    access_filter: ClassVar[type[AccessControlFilter]]
+    access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]
     model_class: ClassVar[type[Any]]
+    CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if not hasattr(cls, "access_filter"):
             raise NotImplementedError(f"Subclass '{cls.__name__}' must define an 'access_filter' ClassVar.")
-        cls.model_class = cls.access_filter.model_class
+        access = cls.access_filter
+        model_class = getattr(access, "model_class", None)
+        if model_class is None:
+            raise NotImplementedError(f"Subclass '{cls.__name__}' access_filter must define model_class.")
+        cls.model_class = model_class
+        # Prefer explicit registry; otherwise wire CUSTOM_FILTERS → optimizer registry shape.
+        if cls.__dict__.get("CUSTOM_FILTERS") and "_custom_filters_registry" not in cls.__dict__:
+            cls._custom_filters_registry = {cls.model_class: dict(cls.CUSTOM_FILTERS)}
 
     def __post_init__(self) -> None:
         normalize_unset_scalars_on_instance(self, type(self))
@@ -92,11 +100,12 @@ class BaseNodeType(Node):
         session = await info.context.get_session()
         optimizer = QueryOptimizer(info, session)
         optimizer.register_access_filter(cls.model_class, cls.access_filter)
-        return await OptimizedListConnection.resolve_connection(
-            optimizer=optimizer,
-            model=cls.model_class,
-            graphql_type=cls,
-            info=info,
-            strawberry_type=cls,
-            **kwargs,
-        )
+        async with info.context.db_execution_lock:
+            return await OptimizedListConnection.resolve_connection(
+                optimizer=optimizer,
+                model=cls.model_class,
+                graphql_type=cls,
+                info=info,
+                strawberry_type=cls,
+                **kwargs,
+            )

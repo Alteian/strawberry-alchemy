@@ -54,6 +54,12 @@ class ParentRepository(BaseRepository[ParentModel, ParentSchema]):
     relation_models = {"children": ChildModel}
 
 
+class ClassVarParentRepository(BaseRepository[ParentModel, ParentSchema]):
+    model_cls = ParentModel
+    schema_cls = ParentSchema
+    relation_models = {"children": ChildModel}
+
+
 @pytest.fixture
 async def session() -> AsyncGenerator[AsyncSession]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -66,6 +72,14 @@ async def session() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_classvar_repository_constructs_with_session_only(session: AsyncSession) -> None:
+    repo = ClassVarParentRepository(session)
+    created = await repo.create(ParentSchema(name="via-classvar"))
+    assert created.name == "via-classvar"
+    assert created.id is not None
 
 
 @pytest.mark.asyncio

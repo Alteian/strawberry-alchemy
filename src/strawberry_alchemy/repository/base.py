@@ -19,19 +19,28 @@ class BaseRepository[
     SchemaT: BaseSchema = BaseSchema,
     DeletionHandlerT: BaseDeletionHandler = BaseDeletionHandler,
 ]:
+    model_cls: ClassVar[type[Any]]
+    schema_cls: ClassVar[type[BaseSchema]]
     relation_models: ClassVar[dict[str, type[Any]]] = {}
 
     def __init__(
         self,
         session: AsyncSession,
-        model_cls: type[ModelT],
-        schema_cls: type[SchemaT],
+        model_cls: type[ModelT] | None = None,
+        schema_cls: type[SchemaT] | None = None,
         *,
         deletion_handler: DeletionHandlerT | None = None,
     ) -> None:
+        resolved_model = model_cls if model_cls is not None else getattr(type(self), "model_cls", None)
+        resolved_schema = schema_cls if schema_cls is not None else getattr(type(self), "schema_cls", None)
+        if resolved_model is None or resolved_schema is None:
+            raise TypeError(
+                f"{type(self).__name__} requires model_cls and schema_cls "
+                "(pass to the constructor or declare as ClassVars on the subclass)."
+            )
         self.session = session
-        self.model_cls = model_cls
-        self.schema_cls = schema_cls
+        self.model_cls = cast("type[ModelT]", resolved_model)
+        self.schema_cls = cast("type[SchemaT]", resolved_schema)
         self.deletion_handler = deletion_handler
 
     @property

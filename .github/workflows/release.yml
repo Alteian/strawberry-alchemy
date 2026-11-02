@@ -18,8 +18,8 @@ jobs:
           version: ">=0.9"
           python-version: "3.13"
       - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
 
   test:
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 [project]
 name = "strawberry-alchemy"
-version = "0.1.6"
+version = "0.2.0"
 description = "Toolkit for fast and easy strawberry+sqlalchemy apis"
 readme = "README.md"
 license = "MIT"
@@ -24,10 +24,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "strawberry-graphql>=0.220",
-    "sqlalchemy",
-    "pydantic>=2.0",
-    "python-dateutil>=2.7",
+    "strawberry-graphql>=0.339.1",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "pydantic>=2.14.2",
+    "python-dateutil>=4.0",
 ]
 
 [project.urls]
@@ -38,13 +38,14 @@ Changelog = "https://github.com/Alteian/strawberry-alchemy/blob/master/CHANGELOG
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1",
-    "pytest-asyncio>=1.4",
+    "pytest>=9.2",
+    "pytest-asyncio>=1.4.1",
     "pytest-cov>=6.0",
-    "ruff>=0.15",
-    "mypy>=2.1",
+    "ruff>=0.17.3",
+    "mypy>=2.4.1",
     "aiosqlite>=0.22",
-    "pre-commit>=4.6",
+    "pre-commit>=4.7",
+    "types-python-dateutil>=2.9",
 ]
 
 [build-system]
@@ -54,6 +55,7 @@ build-backend = "uv_build"
 [tool.ruff]
 target-version = "py313"
 line-length = 120
+extend-exclude = ["docs", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM", "TCH"]
@@ -64,6 +66,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.coverage.run]

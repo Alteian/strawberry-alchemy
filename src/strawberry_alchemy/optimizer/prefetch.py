@@ -201,14 +201,9 @@ def build_recursive_dependency_tree(
 
 
 def source_path_to_dependency_tree(source_path: str) -> dict[str, Any]:
-    parts = [part for part in source_path.split(".") if part]
-    if not parts:
-        return {}
+    from strawberry_alchemy.optimizer.selection import source_path_to_dependency_tree as _typed_tree
 
-    tree: dict[str, Any] = {parts[-1]: True}
-    for part in reversed(parts[:-1]):
-        tree = {part: tree}
-    return tree
+    return _typed_tree(source_path)
 
 
 def optimize_field(

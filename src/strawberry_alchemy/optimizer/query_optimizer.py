@@ -122,53 +122,40 @@ class QueryOptimizer:
         return normalized if isinstance(normalized, str) else field_name
 
     def extract_model_fields(self, selected_fields: dict, level: int = 0) -> dict:
+        from strawberry_alchemy.optimizer.selection import (
+            FieldSelection,
+            RelayConnectionSelection,
+            parse_selection_tree,
+            selection_to_model_fields,
+        )
+
         relay_wrapper_keys = {"edges", "cursor", "pageInfo", "totalCount", "__typename", "items"}
 
+        # Preserve list-shaped ``items`` (ListResult) before typed parse.
         if set(selected_fields.keys()).issubset(relay_wrapper_keys):
-            edges = selected_fields.get("edges")
-            if isinstance(edges, dict):
-                node = edges.get("node")
-                if isinstance(node, dict):
-                    return self.extract_model_fields(node, level + 1)
-
             items = selected_fields.get("items")
-            if isinstance(items, dict):
-                return self.extract_model_fields(items, level + 1)
             if isinstance(items, list):
                 return {
                     "items": [
                         self.extract_model_fields(item, level + 1) if isinstance(item, dict) else item for item in items
                     ]
                 }
-            return {}
+
+        tree = parse_selection_tree(selected_fields)
+        if isinstance(tree, RelayConnectionSelection):
+            return self.extract_model_fields(tree.node_fields, level + 1)
 
         model_fields: dict[str, Any] = {}
-        for key, value in selected_fields.items():
+        assert isinstance(tree, FieldSelection)
+        raw_children = selection_to_model_fields(tree)
+
+        for key, value in raw_children.items():
             normalized_key = self.normalize_field_name(key)
 
-            if normalized_key in {"__typename", "cursor", "pageInfo", "totalCount"}:
+            if normalized_key == "items" and isinstance(value, dict):
+                nested = self.extract_model_fields(value, level + 1)
+                model_fields.update(nested)
                 continue
-
-            if normalized_key == "edges" and isinstance(value, dict):
-                node = value.get("node")
-                if isinstance(node, dict):
-                    nested = self.extract_model_fields(node, level + 1)
-                    model_fields.update(nested)
-                    continue
-                # NOTE: real model relationship/field named "edges" (non-Relay) falls - exempli gratia: workflow edges and nodes...
-                # through to the generic dict handling below.
-
-            if normalized_key == "items":
-                if isinstance(value, dict):
-                    nested = self.extract_model_fields(value, level + 1)
-                    model_fields.update(nested)
-                    continue
-                if isinstance(value, list):
-                    extracted_list = [
-                        self.extract_model_fields(item, level + 1) if isinstance(item, dict) else item for item in value
-                    ]
-                    model_fields[normalized_key] = extracted_list
-                    continue
 
             if isinstance(value, dict):
                 nested = self.extract_model_fields(value, level + 1)
