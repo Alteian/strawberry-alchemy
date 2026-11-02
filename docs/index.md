@@ -66,20 +66,15 @@ A complete walkthrough of these pieces working together is in
 - [Mapping & schema](mapping-and-schema.md) — `BaseSchema`, `dump_for_db`, `to_type`, mapping helpers
 - [Permissions](permissions.md) — permission classes and resource checks
 - [API reference](api-reference.md) — every public export with signatures
+- [Roadmap](roadmap.md) — planned fixes, hardening, and features
 
 ## Development
 
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-uv sync
-
-# Lint & test
-uv run ruff check .
-uv run pytest -v
-
-# Build
-uv build
+make sync && make doctor
+make ci
 ```
 
 ## License

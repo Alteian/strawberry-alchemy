@@ -28,7 +28,7 @@ from strawberry_alchemy import BaseNodeType, AnnotateExists, optimize_field
 
 @strawberry.type
 class PostType(BaseNodeType):
-    access_filter: ClassVar = PostAccessFilter()
+    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
 
     comments: list[Annotated["CommentType", strawberry.lazy(".types")]] | None = strawberry.UNSET
 
@@ -128,7 +128,7 @@ _COVER_IMAGE_PREFETCH = PrefetchRelated(
 
 @strawberry.type
 class PropertyType(BaseNodeType):
-    access_filter: ClassVar = PropertyAccessFilter()
+    access_filter: ClassVar[type[PropertyAccessFilter]] = PropertyAccessFilter
 
     images: list[Annotated["PropertyImageType", strawberry.lazy(".types")]] | None = strawberry.UNSET
 
@@ -164,7 +164,7 @@ so the resolver can read them safely.
 ```python
 @strawberry.type
 class UserType(BaseNodeType):
-    access_filter: ClassVar = UserAccessFilter()
+    access_filter: ClassVar[type[UserAccessFilter]] = UserAccessFilter
 
     avatar_s3_key: str | None = strawberry.UNSET  # not selected by client
 

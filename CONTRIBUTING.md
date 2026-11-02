@@ -9,29 +9,35 @@ Thanks for your interest in contributing! Here are the guidelines.
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-uv sync
+make sync
+make doctor
+make hooks   # optional: install pre-commit
 ```
+
+Use `make help` for the full target list.
 
 ---
 
 ## Code Style
 
-- We use **ruff** for linting and formatting.
-- Run `uv run ruff check --fix .` and `uv run ruff format .` before committing.
+- We use **ruff** for linting and formatting (`make format` / `make lint`).
 - Target Python **3.13+** — use modern syntax (`type[X]`, `X | Y`, generics with `[T]`).
-- Type annotations are required — run `uv run mypy src/` to type-check.
+- Type annotations are required — `make typecheck` runs mypy. Clearing existing
+  mypy debt so CI can hard-gate is tracked in [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
 ## Testing
 
 ```bash
-uv run pytest -v
+make test
+# or: make test ARGS="-k filter_or"
 ```
 
 All new features and bug fixes must include tests. We use:
 - `pytest` with `pytest-asyncio` for async tests
 - `aiosqlite` for in-memory database integration tests
+- `pytest-cov` in CI
 
 ---
 
@@ -39,7 +45,7 @@ All new features and bug fixes must include tests. We use:
 
 1. **Fork** the repo and create a feature branch from `master`.
 2. **Make your changes** with tests.
-3. Ensure `ruff check`, `ruff format --check`, `mypy src/`, and `pytest` all pass:
+3. Ensure the local CI pipeline is green:
    ```bash
    make ci
    ```

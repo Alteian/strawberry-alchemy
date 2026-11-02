@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-11-02
+
+### Added
+
+- Make DX targets: `help`, `sync` / `sync-frozen`, `doctor`, `check-versions`,
+  `hooks`, and `test ARGS=…` (Make + uv; no Mise).
+- `.pre-commit-config.yaml` (ruff).
+- CI runs `pytest-cov` and a non-blocking `mypy` job (hard gate once typing
+  debt is cleared); Dependabot watches `uv` instead of npm.
+- Release workflow uses `--frozen` sync, uploads `dist/` between jobs, and
+  attaches built artifacts to the GitHub Release.
+- [docs/roadmap.md](docs/roadmap.md) for planned fixes, hardening, and features.
+- Regression fixtures (expected failures) for root `OR`/`AND` filter bugs and
+  typed selection-tree work targeted at 0.2.0.
+
+### Fixed
+
+- Documentation now treats `access_filter` as a **class** `ClassVar` (instances
+  remain supported).
+- Clarified that **soft-delete** and **`DateTimeProcessor`** were never part of
+  the public API despite older changelog wording.
+
 ## [0.1.5] — 2026-08-19
 
 ### Fixed

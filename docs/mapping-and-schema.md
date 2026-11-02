@@ -136,7 +136,7 @@ localized strings, GlobalID encoding, derived booleans:
 ```python
 @strawberry.type
 class TaskType(BaseNodeType):
-    access_filter: ClassVar = TaskAccessFilter()
+    access_filter: ClassVar[type[TaskAccessFilter]] = TaskAccessFilter
 
     title: str = strawberry.UNSET
     is_overdue: bool = False  # computed, not a column

@@ -92,7 +92,7 @@ from strawberry_alchemy import BaseNodeType
 
 @strawberry.type
 class PostType(BaseNodeType):
-    access_filter: ClassVar = PostAccessFilter()
+    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
 
     title: str | None = strawberry.UNSET
     body: str | None = strawberry.UNSET
@@ -156,15 +156,14 @@ attribute, and a `db_execution_lock` (see
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-uv sync
+make sync
+make doctor
 
-# Lint & test
-uv run ruff check .
-uv run pytest -v
-
-# Build
-uv build
+# Lint, typecheck, test, build
+make ci
 ```
+
+See [docs/roadmap.md](docs/roadmap.md) for planned work. See `make help` for targets.
 
 ## Contributing
 

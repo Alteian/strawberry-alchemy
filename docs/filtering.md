@@ -131,7 +131,7 @@ PROPERTY_CUSTOM_FILTERS = {
 # types.py
 @strawberry.type
 class PropertyType(BaseNodeType):
-    access_filter: ClassVar = PropertyAccessFilter()
+    access_filter: ClassVar[type[PropertyAccessFilter]] = PropertyAccessFilter
     _custom_filters_registry: ClassVar = PROPERTY_CUSTOM_FILTERS
 ```
 

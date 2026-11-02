@@ -70,9 +70,10 @@ class PostType(BaseNodeType):
 ### Rules and conventions
 
 - **`access_filter` is required.** Every subclass must declare an `access_filter`
-  `ClassVar` (an `AccessControlFilter` subclass or instance). The class is also
-  derived from it automatically (`model_class = access_filter.model_class`), but you
-  can declare `model_class` explicitly as well.
+  `ClassVar` pointing at an `AccessControlFilter` **subclass** (preferred).
+  Instances still work for backwards compatibility because `apply_filter` is a
+  staticmethod. `model_class` is derived from `access_filter.model_class`
+  automatically; you can also declare `model_class` explicitly.
 - **Scalar fields default to `strawberry.UNSET`.** This lets the optimizer defer
   columns the client did not request and lets `from_schema` distinguish
   "not provided" from `None`. Fields that are nullable (`| None`) or temporal

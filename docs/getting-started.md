@@ -92,7 +92,7 @@ from strawberry_alchemy import BaseNodeType, AnnotateExists, optimize_field
 
 @strawberry.type
 class PostType(BaseNodeType):
-    access_filter: ClassVar = PostAccessFilter()
+    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
 
     user_id: uuid.UUID | None = strawberry.UNSET
     title: str | None = strawberry.UNSET
@@ -108,7 +108,7 @@ class PostType(BaseNodeType):
 
 @strawberry.type
 class CommentType(BaseNodeType):
-    access_filter: ClassVar = PostAccessFilter()
+    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
 
     post_id: uuid.UUID | None = strawberry.UNSET
     body: str | None = strawberry.UNSET

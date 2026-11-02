@@ -1,6 +1,6 @@
 [project]
 name = "strawberry-alchemy"
-version = "0.1.5"
+version = "0.1.6"
 description = "Toolkit for fast and easy strawberry+sqlalchemy apis"
 readme = "README.md"
 license = "MIT"
@@ -40,6 +40,7 @@ Changelog = "https://github.com/Alteian/strawberry-alchemy/blob/master/CHANGELOG
 dev = [
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
+    "pytest-cov>=6.0",
     "ruff>=0.15",
     "mypy>=2.1",
     "aiosqlite>=0.22",
@@ -64,6 +65,14 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["strawberry_alchemy"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.mypy]
 python_version = "3.13"
