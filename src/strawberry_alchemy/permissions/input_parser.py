@@ -20,7 +20,8 @@ def _decode_global_id(raw: Any) -> UUID | str | None:
         try:
             _, node_id = from_base64(raw)
             return UUID(node_id)
-        except (ValueError, TypeError):
+        except Exception:
+            # Includes ValueError/TypeError and Strawberry InvalidGlobalIDError.
             return raw
     return raw
 

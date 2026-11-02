@@ -12,17 +12,18 @@
 - `examples/blog` + `tests/examples` covering the full feature surface.
 - README / getting-started point at the example.
 
-## 0.2.2 — scan and regressions
+## Done in 0.2.2
 
-- Broader bugfix scan under new deps and typed selection.
-- Expand operator / resolve_* / deletion-handler coverage.
-- Clear remaining mypy debt so CI typecheck can become a hard gate.
+- Hardened GlobalID decode in permissions input parsing.
+- Added repository relation and FilterBuilder error regression tests.
 
 ## Later candidates
 
+- Clear remaining mypy debt so CI typecheck can become a hard gate.
 - Optional soft-delete helpers on `BaseRepository`.
 - Generic `AnnotateAncestry` CTE (replace experimental stub).
 - Deletion reporting / partial-failure mode.
 - Per-call `access_filter` override on `resolve_*`.
 - QueryAnalyzer UX improvements.
 - JSONB / structured filter helpers.
+- Broader `resolve_*` / access-filter-on-`totalCount` integration tests.

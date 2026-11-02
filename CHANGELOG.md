@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-11-02
+
+### Fixed
+
+- GlobalID decoding in permissions input parsing now tolerates Strawberry
+  `InvalidGlobalIDError` (and related decode failures) without raising.
+
+### Tests
+
+- Repository `add_related` / `remove_related` coverage.
+- FilterBuilder unknown lookup / unknown field error coverage.
+
 ## [0.2.1] — 2026-11-02
 
 ### Added
