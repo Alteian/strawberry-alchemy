@@ -3,6 +3,10 @@
 This page walks through building a minimal blog API (Post / Comment) with
 strawberry-alchemy, step by step.
 
+A complete, importable version of this walkthrough (plus tests) lives in
+[`examples/blog`](../examples/blog). Prefer that tree when you want copy-pasteable
+modules that stay in sync with the library.
+
 The app exposes: a Relay `node` query, a `list` query with filters and pagination,
 a Relay `connection` query, and `create` / `update` / `delete` mutations.
 

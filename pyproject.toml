@@ -1,6 +1,6 @@
 [project]
 name = "strawberry-alchemy"
-version = "0.2.0"
+version = "0.2.1"
 description = "Toolkit for fast and easy strawberry+sqlalchemy apis"
 readme = "README.md"
 license = "MIT"
@@ -63,11 +63,14 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/strawberry_alchemy/repository/base.py" = ["A002"]
+"examples/**" = ["A002", "TC001", "TC002", "TC003"]
+"tests/examples/**" = ["A002"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true

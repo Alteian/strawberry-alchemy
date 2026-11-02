@@ -7,12 +7,10 @@
 - Typed selection helpers (`FieldPath`, Relay vs domain `edges`).
 - `CUSTOM_FILTERS` on `BaseNodeType`, repository ClassVar constructor, connection lock.
 
-## 0.2.1 — docs and examples
+## Done in 0.2.1
 
-- Self-contained `examples/` walkthrough: `BaseNodeType`, access filters, filters
-  (including `OR`), `@optimize_field`, repository + `relation_models`,
-  `BaseDeletionHandler`.
-- README / getting-started aligned with that example.
+- `examples/blog` + `tests/examples` covering the full feature surface.
+- README / getting-started point at the example.
 
 ## 0.2.2 — scan and regressions
 

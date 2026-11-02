@@ -58,6 +58,7 @@ A complete walkthrough of these pieces working together is in
 ## Documentation index
 
 - [Getting started](getting-started.md) — full walkthrough: models, types, filters, queries, mutations, schema
+- [Blog example](../examples/blog/README.md) — runnable sketch covering the full feature set
 - [Types & models](types-and-models.md) — `BaseNodeType`, `ListResult`, `OptimizedListConnection`, the `Base` model
 - [Queries](queries.md) — `resolve_node`, `resolve_list`, `resolve_connection`, ordering, pagination
 - [Query optimizer](query-optimizer.md) — automatic load strategies, `@optimize_field` hints, `QueryAnalyzer`

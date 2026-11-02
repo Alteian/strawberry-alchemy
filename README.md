@@ -151,6 +151,15 @@ attribute, and a `db_execution_lock` (see
 | [docs/permissions.md](docs/permissions.md) | Permission classes, resource checks |
 | [docs/api-reference.md](docs/api-reference.md) | Every public export with signatures |
 
+## Example
+
+A runnable blog sketch (models, ACL, `OR` filters, `@optimize_field`, ClassVar
+repositories, deletion handler) lives in [`examples/blog`](examples/blog).
+
+```bash
+make test ARGS="tests/examples"
+```
+
 ## Development
 
 ```bash

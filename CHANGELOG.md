@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-02
+
+### Added
+
+- **`examples/blog`** — self-contained Post/Comment sketch covering access filters,
+  `OR` filters, `CUSTOM_FILTERS`, `@optimize_field`, ClassVar repositories, and
+  `BaseDeletionHandler`, with tests under `tests/examples/`.
+
+### Documentation
+
+- README and getting-started link to the blog example as the canonical walkthrough.
+
 ## [0.2.0] — 2026-11-02
 
 ### Added
