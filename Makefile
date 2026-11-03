@@ -4,6 +4,9 @@
 #   make help              - print this help
 #   make <target>          - run a target
 #   make test ARGS="-k x"  - forward args to pytest
+#
+# Tool versions come from mise.toml (local + CI). Every uv invocation goes through
+# `mise exec` so PATH pollution cannot pick a different uv/python.
 
 BLUE   := \033[0;34m
 GREEN  := \033[0;32m
@@ -12,6 +15,8 @@ BOLD   := \033[1m
 NC     := \033[0m
 
 ARGS ?=
+MISE ?= mise
+UV   := $(MISE) exec -- uv
 
 .DEFAULT_GOAL := help
 
@@ -34,7 +39,7 @@ help: ## Show this help
 		/^[a-zA-Z0-9_.-]+:.*## / { printf "  $(YELLOW)%-22s$(NC) %s\n", $$1, $$2 } \
 	' $(MAKEFILE_LIST)
 	@printf "\n$(BOLD)Examples:$(NC)\n"
-	@printf "  make sync && make doctor\n"
+	@printf "  mise install && make sync && make doctor\n"
 	@printf "  make test ARGS=\"-k filter_or\"\n"
 	@printf "  make ci\n\n"
 
@@ -43,65 +48,67 @@ help: ## Show this help
 # =============================================================================
 
 sync: ## Install deps from lockfile
-	uv sync
+	$(UV) sync
 
 install: sync ## Alias for sync
 
 sync-frozen: ## Install exactly as locked (CI parity)
-	uv sync --frozen
+	$(UV) sync --frozen
 
 hooks: ## Install pre-commit git hooks
-	uv run pre-commit install
+	$(UV) run pre-commit install
 
-doctor: ## Check local toolchain
-	@command -v uv >/dev/null || { printf "$(YELLOW)FAIL: uv missing$(NC)\n"; exit 1; }
-	@printf "$(GREEN)uv:$(NC)      " && uv --version
-	@printf "$(GREEN)Python:$(NC)  " && uv run python -c 'import sys; print(sys.version.split()[0]); assert sys.version_info >= (3, 13), sys.version'
-	@printf "$(GREEN)ruff:$(NC)    " && uv run ruff --version
-	@printf "$(GREEN)mypy:$(NC)    " && uv run mypy --version
-	@printf "$(GREEN)pytest:$(NC)  " && uv run pytest --version
+doctor: ## Check local toolchain (mise pins in mise.toml)
+	@command -v $(MISE) >/dev/null || { printf "$(YELLOW)FAIL: mise missing — install from https://mise.jdx.dev$(NC)\n"; exit 1; }
+	@$(MISE) install
+	@printf "$(GREEN)mise:$(NC)    " && $(MISE) --version
+	@printf "$(GREEN)uv:$(NC)      " && $(UV) --version
+	@printf "$(GREEN)Python:$(NC)  " && $(UV) run python -c 'import sys; print(sys.version.split()[0]); assert sys.version_info >= (3, 13), sys.version'
+	@printf "$(GREEN)ruff:$(NC)    " && $(UV) run ruff --version
+	@printf "$(GREEN)mypy:$(NC)    " && $(UV) run mypy --version
+	@printf "$(GREEN)pytest:$(NC)  " && $(UV) run pytest --version
 	@printf "$(GREEN)✔ toolchain ok$(NC)\n"
 
 check-versions: ## Print toolchain versions
-	@printf "$(GREEN)Python:$(NC) " && uv run python --version
-	@printf "$(GREEN)UV:$(NC)     " && uv --version
-	@printf "$(GREEN)Ruff:$(NC)   " && uv run ruff --version
-	@printf "$(GREEN)mypy:$(NC)   " && uv run mypy --version
-	@printf "$(GREEN)pytest:$(NC) " && uv run pytest --version
+	@printf "$(GREEN)Python:$(NC) " && $(UV) run python --version
+	@printf "$(GREEN)UV:$(NC)     " && $(UV) --version
+	@printf "$(GREEN)Ruff:$(NC)   " && $(UV) run ruff --version
+	@printf "$(GREEN)mypy:$(NC)   " && $(UV) run mypy --version
+	@printf "$(GREEN)pytest:$(NC) " && $(UV) run pytest --version
 
 # =============================================================================
 # Quality
 # =============================================================================
 
 lint: ## Ruff check + format check
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	$(UV) run ruff check src tests
+	$(UV) run ruff format --check src tests
 
 format: ## Auto-fix lint + format
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	$(UV) run ruff check --fix src tests
+	$(UV) run ruff format src tests
 
 typecheck: ## mypy on src/
-	uv run mypy src/
+	$(UV) run mypy src/
 
 test: ## pytest (ARGS=...); skips postgres by default
-	uv run pytest -v --cov=strawberry_alchemy --cov-report=term-missing --cov-fail-under=68 -m "not postgres" $(ARGS)
+	$(UV) run pytest -v --cov=strawberry_alchemy --cov-report=term-missing --cov-fail-under=68 -m "not postgres" $(ARGS)
 
 test-postgres: ## pytest postgres-marked tests (needs STRAWBERRY_ALCHEMY_PG_URL)
-	uv run pytest -v -m postgres $(ARGS)
+	$(UV) run pytest -v -m postgres $(ARGS)
 
 docs: ## Build MkDocs site into site/
-	uv run mkdocs build --strict
+	$(UV) run mkdocs build --strict
 
 docs-serve: ## Serve MkDocs locally
-	uv run mkdocs serve
+	$(UV) run mkdocs serve
 
 ci: lint typecheck test build ## Full local CI (lint + mypy + test + build)
 
 ci-strict: ci ## Alias for ci (kept for older docs/scripts)
 
 build: ## Build distributable packages
-	uv build
+	$(UV) build
 
 clean: ## Remove caches and build artifacts
 	rm -rf dist/ build/ *.egg-info/ .mypy_cache/ .ruff_cache/ .pytest_cache/ .coverage htmlcov/
@@ -112,7 +119,7 @@ clean: ## Remove caches and build artifacts
 # =============================================================================
 
 version: ## Print package version from pyproject.toml
-	@uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+	@$(UV) run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
 
 _check_version:
 	@if [ -z "$(VERSION)" ]; then \
@@ -121,13 +128,13 @@ _check_version:
 	fi
 
 bump-patch: ## Bump patch version (0.1.0 → 0.1.1)
-	@uv run python scripts/bump_version.py patch
+	@$(UV) run python scripts/bump_version.py patch
 
 bump-minor: ## Bump minor version (0.1.0 → 0.2.0)
-	@uv run python scripts/bump_version.py minor
+	@$(UV) run python scripts/bump_version.py minor
 
 bump-major: ## Bump major version (0.1.0 → 1.0.0)
-	@uv run python scripts/bump_version.py major
+	@$(UV) run python scripts/bump_version.py major
 
 bump-version: _check_version ## Bump to VERSION=X.Y.Z
-	@uv run python scripts/bump_version.py set $(VERSION)
+	@$(UV) run python scripts/bump_version.py set $(VERSION)

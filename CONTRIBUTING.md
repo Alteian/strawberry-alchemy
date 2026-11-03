@@ -6,15 +6,19 @@ Thanks for your interest in contributing! Here are the guidelines.
 
 ## Development Setup
 
+Install [mise](https://mise.jdx.dev), then:
+
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
+mise install          # Python + uv from mise.toml / mise.lock
 make sync
 make doctor
-make hooks   # optional: install pre-commit
+make hooks            # optional: install pre-commit
 ```
 
-Use `make help` for the full target list.
+CI uses the same `mise.toml` pins and the same Make targets (`make lint`,
+`make typecheck`, `make test`, …). Use `make help` for the full target list.
 
 ---
 

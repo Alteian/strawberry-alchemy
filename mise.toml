@@ -1,0 +1,10 @@
+# Toolchain pins shared by local dev and CI (via jdx/mise-action).
+# Tasks stay in the Makefile — mise only manages tool versions.
+
+[tools]
+python = "3.13"
+uv = "0.13.6"
+
+[settings]
+idiomatic_version_file_enable_tools = ["python"]
+python.uv_venv_auto = "source"

@@ -18,15 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-        with:
-          version: ">=0.9"
-          python-version: "3.13"
-          enable-cache: true
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
 
-      - run: uv sync --frozen
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
+      - run: make sync-frozen
+      - run: make lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -35,14 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-        with:
-          version: ">=0.9"
-          python-version: "3.13"
-          enable-cache: true
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
 
-      - run: uv sync --frozen
-      - run: uv run mypy src/
+      - run: make sync-frozen
+      - run: make typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -53,17 +44,18 @@ jobs:
       matrix:
         python-version: ["3.13", "3.14"]
 
+    env:
+      MISE_PYTHON_VERSION: ${{ matrix.python-version }}
+
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
-          version: ">=0.9"
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
+          cache_key: "{{default}}-py${{ matrix.python-version }}"
 
-      - run: uv sync --frozen
-      - run: uv run pytest -v --cov=strawberry_alchemy --cov-report=term-missing --cov-fail-under=68 -m "not postgres"
+      - run: make sync-frozen
+      - run: make test
 
   postgres:
     runs-on: ubuntu-latest
@@ -88,14 +80,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-        with:
-          version: ">=0.9"
-          python-version: "3.13"
-          enable-cache: true
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
 
-      - run: uv sync --frozen
-      - run: uv run pytest -v -m postgres
+      - run: make sync-frozen
+      - run: make test-postgres
 
   build:
     runs-on: ubuntu-latest
@@ -104,11 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-        with:
-          version: ">=0.9"
-          python-version: "3.13"
-          enable-cache: true
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
 
-      - run: uv sync --frozen
-      - run: uv build
+      - run: make sync-frozen
+      - run: make build

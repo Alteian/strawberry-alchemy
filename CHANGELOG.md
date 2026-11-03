@@ -28,11 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Local + CI toolchain is pinned with **mise** (`mise.toml` / `mise.lock`);
+  GitHub Actions uses `jdx/mise-action` and the same Make targets as developers.
 - Docs honesty: README / index version floors and feature callouts; nested-ACL behavior
   documented; blog example no longer billed as the full API surface.
 - `IdentityLike` is a stable identity protocol (experimental note removed).
 - `examples/blog` uses `SoftDeleteMixin` / `soft_delete_field` and
   `prepare_mutation_resources` on delete.
+
+### Fixed
+
+- Postgres CI JSONB key-filter test now uses a Strawberry localized filter input
+  (raw dicts were incorrectly treated as JSONB equality binds).
 
 ## [0.4.0] — 2026-11-03
 

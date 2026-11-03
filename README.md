@@ -166,14 +166,19 @@ make test ARGS="tests/examples"
 
 ## Development
 
+Tool versions are pinned in [`mise.toml`](mise.toml) (same pins CI uses via
+[`jdx/mise-action`](https://github.com/jdx/mise-action)). Tasks stay in Make.
+
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
+# https://mise.jdx.dev — then:
+mise install
 make sync
 make doctor
 
-# Lint, typecheck, test, build
-make ci-strict
+# Lint, typecheck, test, build (same Make targets CI runs)
+make ci
 ```
 
 See [docs/roadmap.md](docs/roadmap.md) for planned work. See `make help` for targets.

@@ -76,8 +76,9 @@ A complete walkthrough of these pieces working together is in
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
+mise install          # pins from mise.toml (same as CI)
 make sync && make doctor
-make ci-strict
+make ci
 ```
 
 ## License
