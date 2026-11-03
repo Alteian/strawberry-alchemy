@@ -16,7 +16,7 @@ ARGS ?=
 .DEFAULT_GOAL := help
 
 .PHONY: help sync install sync-frozen doctor check-versions \
-        lint format typecheck test ci ci-strict build clean hooks \
+        lint format typecheck test test-postgres docs docs-serve ci ci-strict build clean hooks \
         version bump-patch bump-minor bump-major bump-version
 
 # =============================================================================
@@ -84,12 +84,21 @@ format: ## Auto-fix lint + format
 typecheck: ## mypy on src/
 	uv run mypy src/
 
-test: ## pytest (ARGS=...)
-	uv run pytest -v $(ARGS)
+test: ## pytest (ARGS=...); skips postgres by default
+	uv run pytest -v --cov=strawberry_alchemy --cov-report=term-missing --cov-fail-under=68 -m "not postgres" $(ARGS)
 
-ci: lint test build ## Local CI pipeline (lint + test + build)
+test-postgres: ## pytest postgres-marked tests (needs STRAWBERRY_ALCHEMY_PG_URL)
+	uv run pytest -v -m postgres $(ARGS)
 
-ci-strict: lint typecheck test build ## Full local CI (lint + mypy + test + build)
+docs: ## Build MkDocs site into site/
+	uv run mkdocs build --strict
+
+docs-serve: ## Serve MkDocs locally
+	uv run mkdocs serve
+
+ci: lint typecheck test build ## Full local CI (lint + mypy + test + build)
+
+ci-strict: ci ## Alias for ci (kept for older docs/scripts)
 
 build: ## Build distributable packages
 	uv build

@@ -1,0 +1,42 @@
+site_name: strawberry-alchemy
+site_description: Toolkit for fast Strawberry + SQLAlchemy APIs
+site_url: https://alteian.github.io/strawberry-alchemy/
+repo_url: https://github.com/Alteian/strawberry-alchemy
+repo_name: Alteian/strawberry-alchemy
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: red
+      accent: deep orange
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Types and models: types-and-models.md
+  - Queries: queries.md
+  - Filtering: filtering.md
+  - Query optimizer: query-optimizer.md
+  - Mapping and schema: mapping-and-schema.md
+  - Repository: repository.md
+  - Permissions: permissions.md
+  - Postgres RLS: postgres-rls.md
+  - API reference: api-reference.md
+  - Roadmap: roadmap.md

@@ -11,6 +11,9 @@ from strawberry_alchemy.permissions.input_parser import (
     extract_global_ids_from_info,
     map_ids_to_models,
 )
+from strawberry_alchemy.permissions.mutations import (
+    prepare_mutation_resources,
+)
 from strawberry_alchemy.permissions.resolver import (
     BasePermissionResolver,
 )
@@ -40,4 +43,5 @@ __all__ = (
     "extract_global_ids_from_info",
     "fetch_and_check_permissions",
     "map_ids_to_models",
+    "prepare_mutation_resources",
 )

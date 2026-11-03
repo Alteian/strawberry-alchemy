@@ -60,6 +60,7 @@ from strawberry_alchemy.permissions import (
     extract_global_ids_from_info,
     fetch_and_check_permissions,
     map_ids_to_models,
+    prepare_mutation_resources,
 )
 from strawberry_alchemy.postgres import apply_rls_context, clear_rls_context, set_rls_guc
 from strawberry_alchemy.repository import (
@@ -146,6 +147,7 @@ __all__ = (
     "map_sqlalchemy_to_type",
     "optimize_field",
     "parse_selection_tree",
+    "prepare_mutation_resources",
     "build_recursive_dependency_tree",
     "merge_dependency_trees",
     "normalize_dependency_fields",

@@ -1,8 +1,13 @@
 # Blog example
 
-Minimal end-to-end sketch of strawberry-alchemy: models, row-level access filters,
-`BaseNodeType` resolvers, `OR` filters, `@optimize_field`, ClassVar repositories,
-and a real `BaseDeletionHandler`.
+Minimal end-to-end sketch of core strawberry-alchemy patterns: models, row-level
+access filters, `BaseNodeType` resolvers, `OR` filters, `@optimize_field`,
+ClassVar repositories, and a real `BaseDeletionHandler`.
+
+Demonstrates core patterns plus `prepare_mutation_resources`, `DeletionReport` on
+hard delete, and soft-delete via `SoftDeleteMixin` / `PostRepository.soft_delete_field`.
+Broader APIs (`AnnotateAncestry`, JSONB key filters, Postgres RLS GUCs) are covered
+in unit/integration tests under `tests/` (including `tests/postgres`).
 
 Uses SQLite-friendly declarative models (the library `Base` is PostgreSQL-oriented).
 

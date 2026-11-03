@@ -1,38 +1,20 @@
 # Roadmap
 
-## Done in 0.2.0
+## Done in 0.2.0–0.5.0
 
-- Latest dependency floors (Strawberry, SQLAlchemy asyncio, Pydantic, dateutil).
-- Fixed root/nested `AND` / `OR` filter semantics.
-- Typed selection helpers (`FieldPath`, Relay vs domain `edges`).
-- `CUSTOM_FILTERS` on `BaseNodeType`, repository ClassVar constructor, connection lock.
+See [CHANGELOG](https://github.com/Alteian/strawberry-alchemy/blob/master/CHANGELOG.md) for the full history. Highlights:
 
-## Done in 0.2.1
+- **0.2.x** — dep floors, OR/AND semantics, typed selection, blog example, mypy hard gate,
+  per-call `access_filter`, QueryAnalyzer timing.
+- **0.3.0** — `AnnotateAncestry`, `DeletionReport` / `strict`, soft-delete helpers, JSONB lookups.
+- **0.4.0** — Postgres RLS session GUC helpers.
+- **0.5.0** — nested relation ACL on `selectinload`, maxxus-shaped JSONB key filters + selection
+  trim, real Postgres CI, `prepare_mutation_resources`, GlobalID encode registry, coverage gate,
+  MkDocs, QueryAnalyzer `on_report` hook, docs honesty.
 
-- `examples/blog` + `tests/examples` covering the full feature surface.
-- README / getting-started point at the example.
+## Later
 
-## Done in 0.2.2
-
-- Hardened GlobalID decode in permissions input parsing.
-- Added repository relation and FilterBuilder error regression tests.
-
-## Done in 0.2.3
-
-- Cleared mypy debt; CI typecheck is a hard gate.
-- Per-call `access_filter` override on `resolve_*`.
-- QueryAnalyzer `end()` + per-query `duration_ms`.
-- Broader `resolve_*` / access-filter-on-`totalCount` integration tests.
-
-## Done in 0.3.0
-
-- Generic `AnnotateAncestry` recursive CTE (`ids` / `chain`).
-- `DeletionReport` / `strict` / `DeletionPartialFailure` on `delete`.
-- Optional soft-delete helpers (`SoftDeleteMixin`, `soft_delete_field`).
-- JSONB filter lookups + `JSONFilter` input.
-
-## Done in 0.4.0
-
-- Postgres RLS session GUC helpers (`apply_rls_context` / `set_rls_guc` /
-  `clear_rls_context`); app-owned `CREATE POLICY` docs; Python
-  `AccessControlFilter` remains optional defense-in-depth.
+- Published docs site hosting (GitHub Pages / Read the Docs) from the MkDocs build.
+- Broader mutation helper ergonomics (resolver integration beyond `prepare_mutation_resources`).
+- Optional OpenTelemetry auto-instrumentation beyond the `on_report` callback.
+- More Relay cursor edge-case and permissions mutation e2e coverage as consumers surface gaps.

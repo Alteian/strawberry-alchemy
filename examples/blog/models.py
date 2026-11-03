@@ -6,12 +6,14 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from strawberry_alchemy import SoftDeleteMixin
+
 
 class ExampleBase(DeclarativeBase):
     pass
 
 
-class Post(ExampleBase):
+class Post(SoftDeleteMixin, ExampleBase):
     __tablename__ = "post"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

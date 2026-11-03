@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import dateutil.parser
 import strawberry
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, and_, or_
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, and_, or_
+from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.util import AliasedClass
 from strawberry.relay import GlobalID
@@ -22,6 +23,8 @@ SQL_ALCHEMY_TYPE_MAPPING: dict[type[Any], Callable[[Any], Any]] = {
     Boolean: lambda v: v.lower() in ("true", "1", "t", "y", "yes") if isinstance(v, str) else bool(v),
 }
 
+_JSONB_TYPES = (JSON, PGJSONB)
+
 type ModelOrAlias = type[Any] | AliasedClass[Any]
 
 
@@ -31,8 +34,43 @@ class FilterBuilder:
         self._join_paths: dict[str, list[tuple[str, type[Any]]]] = {}
         self.custom_filters: dict[type, dict[str, Any]] = custom_filters or {}
 
+    @staticmethod
+    def _is_jsonb_column(model_field: Any) -> bool:
+        """Return True if the SQLAlchemy column attribute is a JSON/JSONB type."""
+        try:
+            col_type = model_field.property.columns[0].type
+            return isinstance(col_type, _JSONB_TYPES)
+        except (AttributeError, IndexError):
+            return False
+
     def _is_filter_input(self, val: Any) -> bool:
         return hasattr(val, "__dict__") and not isinstance(val, GlobalID)
+
+    @staticmethod
+    def _normalize_lookup_key(key: str) -> str:
+        if key == "in_":
+            return "in"
+        if key == "not_in_":
+            return "not_in"
+        return key
+
+    async def _apply_ops_to_column(
+        self,
+        column: Any,
+        model_field: Any,
+        filter_input: Any,
+    ) -> list[ColumnElement[bool]]:
+        expressions: list[ColumnElement[bool]] = []
+        for op_key, op_val in vars(filter_input).items():
+            if op_val is None or op_val is strawberry.UNSET:
+                continue
+            actual_op = self._normalize_lookup_key(op_key)
+            if actual_op not in FilterOperators.LOOKUP_OPERATORS:
+                continue
+            parsed_val = await self.parse_filter_value(op_val, model_field)
+            operator_func = FilterOperators.LOOKUP_OPERATORS[actual_op]
+            expressions.append(cast("ColumnElement[bool]", operator_func(column, parsed_val)))
+        return expressions
 
     async def parse_filter_value(self, value: Any, field: Any) -> Any:
         if not hasattr(field, "type"):
@@ -115,17 +153,47 @@ class FilterBuilder:
             operator_func = FilterOperators.LOOKUP_OPERATORS[actual_lookup]
             return cast("ColumnElement[bool] | None", operator_func(model_field, parsed_value))
 
+        # Flattened JSONB key path: title__cs + StringFilter(...) or scalar.
+        if self._is_jsonb_column(model_field) and actual_lookup not in FilterOperators.LOOKUP_OPERATORS:
+            text_expr = model_field[actual_lookup].astext
+            if self._is_filter_input(value):
+                expressions = await self._apply_ops_to_column(text_expr, model_field, value)
+                return and_(*expressions) if expressions else None
+            parsed_value = await self.parse_filter_value(value, model_field)
+            return cast("ColumnElement[bool]", text_expr == parsed_value)
+
         if self._is_filter_input(value):
+            # Nested LocalizedStringFilter-style keys on a JSONB column.
+            if self._is_jsonb_column(model_field):
+                expressions = []
+                for jsonb_key, nested_value in vars(value).items():
+                    if nested_value is None or nested_value == strawberry.UNSET:
+                        continue
+                    actual_key = self._normalize_lookup_key(jsonb_key)
+                    if actual_key in FilterOperators.LOOKUP_OPERATORS:
+                        expr = await self.build_field_filter(
+                            model,
+                            f"{field_name}__{actual_key}",
+                            nested_value,
+                            path_prefix=path_prefix,
+                        )
+                        if expr is not None:
+                            expressions.append(expr)
+                        continue
+
+                    text_expr = model_field[jsonb_key].astext
+                    if self._is_filter_input(nested_value):
+                        expressions.extend(await self._apply_ops_to_column(text_expr, model_field, nested_value))
+                    else:
+                        parsed_val = await self.parse_filter_value(nested_value, model_field)
+                        expressions.append(cast("ColumnElement[bool]", text_expr == parsed_val))
+                return and_(*expressions) if expressions else None
+
             expressions = []
             for lookup_key, raw_val in vars(value).items():
                 if raw_val is None or raw_val == strawberry.UNSET:
                     continue
-                if lookup_key == "in_":
-                    actual_lookup_key = "in"
-                elif lookup_key == "not_in_":
-                    actual_lookup_key = "not_in"
-                else:
-                    actual_lookup_key = lookup_key
+                actual_lookup_key = self._normalize_lookup_key(lookup_key)
                 expr = await self.build_field_filter(
                     model, f"{field_name}__{actual_lookup_key}", raw_val, path_prefix=path_prefix
                 )

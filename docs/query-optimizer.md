@@ -10,7 +10,10 @@ SQLAlchemy query:
 - **Computed fields** → SQL `EXISTS` / `COUNT` subquery annotations attached to each row
 - **Filtered prefetches** → `selectinload(rel.and_(...))` when a hint declares
   per-user or custom conditions
-- **Access control** → the registered `AccessControlFilter` is applied to the query
+- **Access control** → the registered `AccessControlFilter` is applied to the **root**
+  query (and `totalCount`), and nested `selectinload` relations apply the related
+  model's ACL via `whereclause` extraction — see
+  [Filtering — nested relations](filtering.md#access-control-filters-row-level-security).
 
 You rarely construct it directly: `BaseNodeType.resolve_node/resolve_nodes/resolve_list/resolve_connection`
 do it for you (see [Queries](queries.md)). This page covers the declarative hints you
@@ -223,7 +226,15 @@ You can also pass your own analyzer into `QueryOptimizer`:
 ```python
 from strawberry_alchemy import QueryAnalyzer, QueryOptimizer
 
-optimizer = QueryOptimizer(info, session, analyzer=QueryAnalyzer(log_sql=True, log_level=logging.INFO))
+def export_metrics(report):
+    # push report.as_dict() into OTel / Prometheus / … 
+    ...
+
+optimizer = QueryOptimizer(
+    info,
+    session,
+    analyzer=QueryAnalyzer(log_sql=True, log_level=logging.INFO, on_report=export_metrics),
+)
 result = await optimizer.optimize_query(model=Post, strawberry_type=PostType)
 report = optimizer.analyzer.report()  # QueryReport dataclass (summary(), as_dict())
 ```

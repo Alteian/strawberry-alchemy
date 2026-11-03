@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import strawberry
-from sqlalchemy import DateTime, String, select
+from sqlalchemy import JSON, DateTime, String, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, defer, mapped_column
@@ -144,6 +144,46 @@ def test_direct_constructor_normalizes_nullable_unset_audit_fields() -> None:
     assert mapped.created_at is None
     assert mapped.updated_at is not UNSET
     assert mapped.updated_at is None
+
+
+class ListingModel(_TestBase):
+    __tablename__ = "mapper_jsonb_listings"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    title: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+@strawberry.type
+class ListingType(BaseNodeType):
+    access_filter: ClassVar[type[AccessControlFilter]] = PersonAccessFilter
+
+    title: dict[str, Any] | None = None
+
+
+@pytest.mark.asyncio
+async def test_map_sqlalchemy_to_type_trims_jsonb_dict_keys() -> None:
+    """Partial key selection on a dict scalar keeps only requested keys."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(_TestBase.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(ListingModel(id=uuid4(), title={"cs": "a", "en": "b"}))
+        await db.commit()
+        instance = (await db.execute(select(ListingModel))).scalar_one()
+
+        mapped = await map_sqlalchemy_to_type(
+            instance,
+            cast("Any", FakeInfo()),
+            ListingType,
+            {"id": True, "title": {"cs": True}},
+        )
+
+    await engine.dispose()
+
+    assert mapped is not None
+    assert mapped.title == {"cs": "a"}
 
 
 @pytest.mark.asyncio

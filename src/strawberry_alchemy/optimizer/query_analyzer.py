@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,10 +91,21 @@ class QueryReport:
         }
 
 
+ReportHook = Callable[[QueryReport], None]
+
+
 class QueryAnalyzer:
-    def __init__(self, *, log_sql: bool = True, log_level: int = logging.INFO) -> None:
+    def __init__(
+        self,
+        *,
+        log_sql: bool = True,
+        log_level: int = logging.INFO,
+        on_report: ReportHook | None = None,
+    ) -> None:
         self.log_sql = log_sql
         self.log_level = log_level
+        # Optional sink for OTel / metrics / custom exporters (receives QueryReport).
+        self.on_report = on_report
 
         self._model_name: str = ""
         self._start_time: float = 0.0
@@ -199,6 +213,8 @@ class QueryAnalyzer:
                     q.row_count,
                     q.duration_ms,
                 )
+        if self.on_report is not None:
+            self.on_report(report)
         return report
 
     def reset(self) -> None:

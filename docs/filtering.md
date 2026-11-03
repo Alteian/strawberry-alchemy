@@ -164,8 +164,8 @@ stmt = select(Post).where(expression)
 
 ## Access-control filters (row-level security)
 
-`AccessControlFilter` is a per-model filter applied to *every* query the optimizer
-builds for that model. Subclasses:
+`AccessControlFilter` is a per-model filter applied to the **root** query the
+optimizer builds for that model (including the `totalCount` subquery). Subclasses:
 
 - must be named `*AccessFilter` (metaclass-enforced),
 - declare `model_class`,
@@ -222,8 +222,18 @@ Production patterns seen in real apps:
 - **Published-or-assigned**: `or_(model.is_published.is_(True), model.assigned_agent_id == user.id)`.
 - **Child entities**: reuse the parent model's filter to inherit visibility rules.
 
-Note: access control applies to the data query *and* the `total_count` query, so
-counts never leak rows the user cannot see.
+Note: access control applies to the root data query *and* the `total_count` query,
+so counts never leak root rows the user cannot see.
+
+**Nested relations:** when the optimizer builds `selectinload` for a relationship, it
+looks up any registered `AccessControlFilter` for the **related** model, runs
+`apply_filter` on a bare `select(related_model)`, and attaches the resulting
+`whereclause` via `selectinload(rel.and_(...))`. Related `BaseNodeType` ClassVar
+filters are discovered from the schema when not already registered on the root
+resolve. Join-heavy ACLs (criteria that depend on joins added inside
+`apply_filter`) may not compose cleanly with `selectinload.and_` — use
+`@optimize_field(PrefetchRelated(..., filter=...))` / `filter_current_user`, or
+enforce visibility with Postgres RLS ([postgres-rls.md](postgres-rls.md)).
 
 ## Operator reference
 

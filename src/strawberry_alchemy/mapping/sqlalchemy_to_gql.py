@@ -15,6 +15,19 @@ UNSET = strawberry.UNSET
 
 type FieldSelectionDict = dict[str, bool | FieldSelectionDict]
 
+# Optional override: field name → Relay type name used by create_global_id_from_field.
+# Example: register_global_id_type("locked_by", "UserType")
+_GLOBAL_ID_TYPE_REGISTRY: dict[str, str] = {}
+
+
+def register_global_id_type(field_name: str, type_name: str) -> None:
+    """Register an explicit GraphQL type name for GlobalID encoding of ``field_name``."""
+    _GLOBAL_ID_TYPE_REGISTRY[field_name] = type_name
+
+
+def clear_global_id_type_registry() -> None:
+    _GLOBAL_ID_TYPE_REGISTRY.clear()
+
 
 def _requested_leaf_fields(selected_fields: FieldSelectionDict) -> set[str]:
     return {name for name, selected in selected_fields.items() if selected is True}
@@ -37,8 +50,11 @@ def _ensure_requested_model_scalars_mapped(
 
 
 def create_global_id_from_field(field_name: str, value: Any) -> GlobalID:
-    base_name = field_name.removesuffix("_id")
-    type_name = f"{base_name.replace('_', ' ').title().replace(' ', '')}Type"
+    if field_name in _GLOBAL_ID_TYPE_REGISTRY:
+        type_name = _GLOBAL_ID_TYPE_REGISTRY[field_name]
+    else:
+        base_name = field_name.removesuffix("_id")
+        type_name = f"{base_name.replace('_', ' ').title().replace(' ', '')}Type"
     return GlobalID(type_name=type_name, node_id=str(value))
 
 
@@ -115,6 +131,12 @@ async def map_sqlalchemy_to_type[T](
             if value is not None and value is not UNSET and "GlobalID" in annotation_str:
                 type_data[field_name] = create_global_id_from_field(field_name, value)
             elif value is not None and value is not UNSET:
+                # Trim JSONB / dict scalars to only keys requested in the selection tree.
+                if isinstance(value, dict) and isinstance(is_selected, dict):
+                    requested_keys = {k for k, v in is_selected.items() if v is True and k in value}
+                    if requested_keys:
+                        value = {k: value[k] for k in requested_keys}
+
                 if (
                     isinstance(value, dict)
                     and annotation is not None

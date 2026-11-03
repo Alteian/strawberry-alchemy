@@ -7,9 +7,10 @@ class HasId(Protocol):
     id: UUID | str | int
 
 
-# NOTE: Experimental
 @runtime_checkable
 class IdentityLike(Protocol):
+    """Minimal identity contract used by permissions and access filters (``id`` only)."""
+
     id: UUID | str | int
 
 

@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import String, and_, literal, or_
+from sqlalchemy import JSON, ColumnElement, String, and_, literal, or_
 from sqlalchemy import cast as sql_cast
+from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Mapper, RelationshipProperty, defer, selectinload
@@ -40,6 +41,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm.util import AliasedClass
 
 logger = logging.getLogger("query_optimizer")
+
+_JSONB_TYPES = (JSON, PGJSONB)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +130,20 @@ class QueryOptimizer:
             query = await cast("Any", access_filter).apply_filter(query, model, context_user)
         return query
 
+    async def _acl_whereclause_for_model(
+        self, related_model: type[Any], context_user: Any
+    ) -> ColumnElement[Any] | None:
+        access_filter = self.get_access_filter(related_model)
+        if access_filter is None:
+            return None
+        # Typical ACLs only add .where(...); that whereclause composes with
+        # selectinload(...).and_(...). Join-heavy ACLs may still expose a
+        # whereclause that is unusable without those joins — prefer
+        # PrefetchRelated.filter or DB RLS in that case.
+        base = select(related_model)
+        filtered = await cast("Any", access_filter).apply_filter(base, related_model, context_user)
+        return getattr(filtered, "whereclause", None)
+
     def normalize_field_name(self, field_name: str) -> str:
         if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items"):
             return field_name
@@ -203,6 +220,15 @@ class QueryOptimizer:
             return False
 
     @staticmethod
+    def _is_jsonb_column(attr: Any) -> bool:
+        """Return True if the SQLAlchemy column attribute is a JSON/JSONB type."""
+        try:
+            col_type = attr.property.columns[0].type
+            return isinstance(col_type, _JSONB_TYPES)
+        except (AttributeError, IndexError):
+            return False
+
+    @staticmethod
     def get_model_attribute(model: type[Any], field_name: str) -> tuple[str, Any]:
         if hasattr(model, field_name):
             return field_name, getattr(model, field_name)
@@ -268,11 +294,16 @@ class QueryOptimizer:
         for field_name, field_value in selected_fields.items():
             if field_name in ("__typename", "pageInfo", "totalCount", "cursor"):
                 continue
-            if field_value is not True:
-                continue
 
             column_name, attr = self.get_model_attribute(model, field_name)
             if attr is None:
+                continue
+
+            # Accept True (scalar leaf) or a dict on a JSONB column (partial key selection).
+            is_jsonb_with_subfields = (
+                isinstance(field_value, dict) and not self.is_relationship(attr) and self._is_jsonb_column(attr)
+            )
+            if field_value is not True and not is_jsonb_with_subfields:
                 continue
 
             if not self.is_relationship(attr) and column_name in all_model_attributes:
@@ -631,6 +662,7 @@ class QueryOptimizer:
         relationship_configs: dict[str, Any] | None = None,
         skip_relationships: set[str] | None = None,
         strawberry_type: type | None = None,
+        context_user: Any | None = None,
     ) -> list[Any]:
         load_options: list[Any] = []
         all_attributes = self.get_all_model_attributes(model)
@@ -658,6 +690,10 @@ class QueryOptimizer:
                         nested_deps = self._resolve_all_dependencies(nested_strawberry_type, subfields, related_model)
                         subfields = nested_deps.augmented_fields
                         selected_fields[field_name] = subfields
+                        # Discover related BaseNodeType ACLs not registered on the root resolve.
+                        nested_acl = getattr(nested_strawberry_type, "access_filter", None)
+                        if nested_acl is not None and self.get_access_filter(related_model) is None:
+                            self.register_access_filter(related_model, nested_acl)
                     else:
                         nested_strawberry_type = None
 
@@ -668,17 +704,27 @@ class QueryOptimizer:
                             order_col.desc() if config["direction"] == Ordering.DESC else order_col.asc()
                         ]
 
-                    relationship_loader = selectinload(attr)
+                    # Always try ACL even when context_user is None — filters often deny anonymous.
+                    criteria = await self._acl_whereclause_for_model(related_model, context_user)
+                    relationship_loader = (
+                        selectinload(attr.and_(criteria)) if criteria is not None else selectinload(attr)
+                    )
 
                     nested_load_options = await self.build_query_with_selected_fields(
-                        related_model, subfields, relationship_configs, strawberry_type=nested_strawberry_type
+                        related_model,
+                        subfields,
+                        relationship_configs,
+                        strawberry_type=nested_strawberry_type,
+                        context_user=context_user,
                     )
                     relationship_loader = relationship_loader.options(*nested_load_options)
                     load_options.append(relationship_loader)
 
                     if _analyzer:
                         _analyzer.record_relationship(field_name)
-                        _analyzer.record_load_strategy(field_name, "selectinload")
+                        _analyzer.record_load_strategy(
+                            field_name, "selectinload+acl" if criteria is not None else "selectinload"
+                        )
 
         deferred_keys: list[str] = []
         for key, attr in all_attributes.items():
@@ -752,6 +798,7 @@ class QueryOptimizer:
             relationship_configs,
             skip_relationships=skip_rels,
             strawberry_type=strawberry_type,
+            context_user=context_user,
         )
 
         for prefetch in deps.filtered_prefetches:

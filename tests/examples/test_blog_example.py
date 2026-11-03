@@ -12,6 +12,7 @@ from examples.blog.models import Comment, ExampleBase, Post
 from examples.blog.repositories import PostRepository
 from examples.blog.schemas import CommentSchema, PostSchema
 from examples.blog.types import PostType
+from strawberry_alchemy import NotFoundError
 from strawberry_alchemy.filtering import FilterBuilder, StringFilter
 
 
@@ -59,7 +60,8 @@ async def test_deletion_handler_cascades_comments(session: AsyncSession) -> None
         )
     )
     assert created.id is not None
-    await repo.delete(id=created.id)
+    report = await repo.delete(id=created.id)
+    assert report.has_failures is False
 
     assert (await session.get(Post, created.id)) is None
     leftover = (await session.execute(select(Comment))).scalars().all()
@@ -85,3 +87,19 @@ async def test_or_filter_multi_field_branch(session: AsyncSession) -> None:
 def test_post_type_wires_custom_filters_registry() -> None:
     assert Post in PostType._custom_filters_registry
     assert "title_search" in PostType._custom_filters_registry[Post]
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_hides_row_until_include_deleted(session: AsyncSession) -> None:
+    user_id = uuid4()
+    repo = PostRepository(session)
+    created = await repo.create(PostSchema(user_id=user_id, title="Soft", body="bye"))
+    assert created.id is not None
+
+    await repo.soft_delete(id=created.id)
+    with pytest.raises(NotFoundError):
+        await repo.get_by_id(created.id)
+
+    restored = await repo.get_by_id(created.id, include_deleted=True)
+    assert restored.id == created.id
+    assert restored.deleted_at is not None

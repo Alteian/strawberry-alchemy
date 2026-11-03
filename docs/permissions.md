@@ -147,12 +147,32 @@ class MyPermissionResolver(BasePermissionResolver):
         return [IsAuthenticated()]
 ```
 
+## Mutation helper
+
+`prepare_mutation_resources` parses GlobalIDs, runs loaders, and checks a permission
+list in one call:
+
+```python
+from strawberry_alchemy import IsAuthenticated, OwnerPermission, prepare_mutation_resources
+
+bag = await prepare_mutation_resources(
+    info,
+    {"post_id": input.id},
+    loaders={"post_id": lambda value: repo.get_by_id(value)},
+    permissions=[
+        IsAuthenticated(),
+        OwnerPermission(owner_field="user_id", resource_key="post_id"),
+    ],
+)
+post = bag.get("post_id")
+```
+
 ## Protocols
 
 Typing-only protocols are exported for context/user contracts:
-`HasId`, `IdentityLike`, `UserLike` (id + role), `PermissionContextLike`
-(current_user / identity), and `ModelRegistryLike`. Context objects may satisfy these
-protocols structurally — no inheritance required.
+`HasId`, `IdentityLike` (`id` only — stable identity contract), `UserLike` (id + role),
+`PermissionContextLike` (current_user / identity), and `ModelRegistryLike`. Context
+objects may satisfy these protocols structurally — no inheritance required.
 
 ## Which user is used?
 

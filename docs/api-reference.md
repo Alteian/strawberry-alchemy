@@ -14,6 +14,7 @@ from strawberry_alchemy import (
 
     # models
     Base,                  # SQLAlchemy DeclarativeBase: UUID pk + created_at/updated_at (PostgreSQL)
+    SoftDeleteMixin,       # optional deleted_at column for soft-delete repositories
 
     # types
     BaseNodeType,          # Relay Node with id/created_at/updated_at + resolver classmethods
@@ -26,7 +27,8 @@ from strawberry_alchemy import (
     # optimizer
     QueryOptimizer,        # selection-set -> one optimized SQLAlchemy query
     QueryResult,           # frozen dataclass: items, selected_fields, total_count
-    QueryAnalyzer,         # per-query diagnostics (env: QUERY_ANALYZER_ENABLED)
+    QueryAnalyzer,         # per-query diagnostics (env: QUERY_ANALYZER_ENABLED; on_report hook)
+    FieldPath, FieldSelection, LeafSelection, RelayConnectionSelection,
     optimize_field,        # decorator for computed-field hints
     PrefetchRelated,       # hint: load relationship (optionally filtered) + fields
     SelectColumns,         # hint: un-defer scalar columns of the current model
@@ -39,12 +41,16 @@ from strawberry_alchemy import (
     merge_dependency_trees,
     normalize_dependency_fields,
     source_path_to_dependency_tree,
+    extract_at_path,
+    parse_selection_tree,
+    selection_to_model_fields,
 
     # filtering
     AccessControlFilter,   # per-model row-level security base (must be named *AccessFilter)
     FilterBuilder,         # Strawberry inputs / dicts -> SQL WHERE
     FilterOperators,       # LOOKUP_OPERATORS registry
     IDFilter, StringFilter, IntFilter, BooleanFilter, DateTimeFilter, EnumFilter,
+    JSONFilter,            # jsonb_contains / has_key / path / … (Postgres JSONB)
 
     # mapping
     map_sqlalchemy_to_type,
@@ -58,10 +64,12 @@ from strawberry_alchemy import (
     extract_global_ids_from_info,
     fetch_and_check_permissions,
     map_ids_to_models,
+    prepare_mutation_resources,  # GlobalID parse → load → permission bag
 
     # repository
     BaseRepository,
     BaseDeletionHandler,
+    DeletionReport, DeletionFailure, DeletionPartialFailure,
 
     # schema
     BaseSchema,
@@ -74,6 +82,12 @@ from strawberry_alchemy import (
     clear_rls_context,
     set_rls_guc,
 )
+```
+
+Submodule-only helpers (not re-exported at the package root):
+
+```python
+from strawberry_alchemy.mapping import register_global_id_type, clear_global_id_type_registry
 ```
 
 See [Postgres RLS](postgres-rls.md) for policy DDL and session wiring.
@@ -257,20 +271,22 @@ def get_prefetch_map(strawberry_type: type) -> dict[str, list[OptimizerHint]]
 
 ```python
 class QueryAnalyzer:
-    def __init__(self, *, log_sql: bool = True, log_level: int = logging.INFO)
+    def __init__(self, *, log_sql: bool = True, log_level: int = logging.INFO,
+                 on_report: Callable[[QueryReport], None] | None = None)
     def begin(self, model) / end(self) / reset(self)
     # end() stamps wall-clock end time used by report().total_duration_ms
     def record_selected_fields / record_deferred / record_relationship /
          record_load_strategy / record_annotation /
          record_query(..., duration_ms=0.0) / record_result / add_warning
     def report(self) -> QueryReport
-    def log_report(self) -> QueryReport
+    def log_report(self) -> QueryReport  # also invokes on_report when set
 ```
 
 `QueryReport` fields: `model_name`, `total_duration_ms`, `query_count`, `queries`
 (each `QueryEvent` has `duration_ms` / `row_count`), `requested_fields`,
 `deferred_fields`, `relationships_loaded`, `annotations`, `load_strategies`,
 `warnings`, `result_count`, `total_count`; plus `summary()` and `as_dict()`.
+Pass `on_report=` to push reports into OTel/metrics without subclassing.
 
 ## Filtering
 
@@ -298,6 +314,10 @@ All inputs default every field to `strawberry.UNSET`:
 - `BooleanFilter` — `exact`, `isnull`
 - `DateTimeFilter` — `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range`
 - `EnumFilter[EnumType]` — `exact`, `in_`, `not_in_`, `isnull`
+- `JSONFilter` — `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`,
+  `jsonb_has_any`, `jsonb_has_all`, `jsonb_path` (Postgres JSONB columns).
+  Nested localized-string style keys (e.g. `title={cs: StringFilter(...)}`)
+  compile to `column['cs'].astext` lookups.
 
 ### `FilterOperators`
 
@@ -307,6 +327,8 @@ class FilterOperators:
         "exact", "iexact", "contains", "icontains", "in", "not_in",
         "gt", "ge", "lt", "le", "startswith", "istartswith",
         "endswith", "iendswith", "range", "isnull",
+        "jsonb_contains", "jsonb_contained_by", "jsonb_has_key",
+        "jsonb_has_any", "jsonb_has_all", "jsonb_path",
     }
 ```
 
@@ -381,7 +403,11 @@ def get_graphql_type_from_sqlalchemy(info, instance) -> type | None
 def extract_fields_at_path(selected_fields, path) -> dict
 def extract_nested_fields(selected_fields, field_path) -> dict
 def create_global_id_from_field(field_name, value) -> GlobalID
+def register_global_id_type(field_name, type_name) -> None   # strawberry_alchemy.mapping
+def clear_global_id_type_registry() -> None
 ```
+
+Dict / JSONB scalars are trimmed to keys requested in the selection tree when mapping.
 
 ## Permissions
 
@@ -397,12 +423,13 @@ class BasePermissionResolver(ABC):
 async def fetch_and_check_permissions(info, permissions, resource_instances=None) -> None   # raises PermissionError
 def extract_global_ids_from_info(data, id_fields=None) -> dict[str, UUID | str | None]
 async def map_ids_to_models(ids, loaders, bag=None) -> ResourceInstances
+async def prepare_mutation_resources(info, ids, *, loaders, permissions) -> ResourceInstances
 
 class ResourceInstances:        # add / add_list / get / get_id / all / __contains__
 ```
 
-Protocols: `HasId`, `IdentityLike`, `UserLike` (id + role),
-`PermissionContextLike` (`current_user`, `identity`), `ModelRegistryLike`.
+Protocols: `HasId`, `IdentityLike` (stable `id`-only identity contract), `UserLike`
+(id + role), `PermissionContextLike` (`current_user`, `identity`), `ModelRegistryLike`.
 
 ## Utils
 

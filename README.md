@@ -33,11 +33,11 @@ helpers.
 
 - No N+1 queries: nested selections become eager loads automatically
 - Unrequested columns are deferred — you only fetch what the client asked for
-- Declarative computed fields (`hasComments`, `coverThumbUrl`, counts) resolved by SQL subqueries
-- `AND`/`OR` filters, relationship joins, and custom per-model filters from Strawberry inputs
+- Declarative computed fields (`hasComments`, counts, ancestry CTEs) via `@optimize_field`
+- `AND`/`OR` filters, relationship joins, custom filters, and Postgres JSONB lookups
 - Relay `Connection` pagination with `totalCount`
-- Async repositories with lifecycle hooks and cascade deletes
-- Row-level access filters applied to every query — and to `totalCount`
+- Async repositories with deletion reports, cascade hooks, and optional soft-delete
+- Row-level `AccessControlFilter` on root queries / `totalCount`, plus Postgres RLS session GUCs
 
 ## Installation
 
@@ -47,7 +47,8 @@ pip install strawberry-alchemy
 uv add strawberry-alchemy
 ```
 
-Requires Python `>= 3.13`, Strawberry GraphQL `>= 0.220`, SQLAlchemy, Pydantic v2.
+Requires Python `>= 3.13`, Strawberry GraphQL `>= 0.339.1`,
+`sqlalchemy[asyncio] >= 2.1.6`, Pydantic `>= 2.14`.
 
 ## Quick example
 
@@ -146,15 +147,18 @@ attribute, and a `db_execution_lock` (see
 | [docs/queries.md](docs/queries.md) | `resolve_node` / `resolve_list` / `resolve_connection`, pagination |
 | [docs/query-optimizer.md](docs/query-optimizer.md) | Load strategies, `@optimize_field` hints, `QueryAnalyzer` |
 | [docs/filtering.md](docs/filtering.md) | Filter inputs, operators, `AND`/`OR`, custom & access-control filters |
-| [docs/repository.md](docs/repository.md) | CRUD, relations, deletion handlers |
+| [docs/repository.md](docs/repository.md) | CRUD, soft-delete, deletion reports / handlers |
 | [docs/mapping-and-schema.md](docs/mapping-and-schema.md) | `BaseSchema`, SQLAlchemy → Strawberry mapping |
 | [docs/permissions.md](docs/permissions.md) | Permission classes, resource checks |
+| [docs/postgres-rls.md](docs/postgres-rls.md) | Session GUC helpers for app-owned RLS policies |
 | [docs/api-reference.md](docs/api-reference.md) | Every public export with signatures |
 
 ## Example
 
-A runnable blog sketch (models, ACL, `OR` filters, `@optimize_field`, ClassVar
-repositories, deletion handler) lives in [`examples/blog`](examples/blog).
+A runnable blog sketch covering core patterns (models, ACL, `OR` filters,
+`@optimize_field`, ClassVar repositories, deletion handler) lives in
+[`examples/blog`](examples/blog). It is a focused walkthrough — not every 0.3/0.4
+API (ancestry, soft-delete, JSONB, RLS) is demonstrated there yet.
 
 ```bash
 make test ARGS="tests/examples"
@@ -169,7 +173,7 @@ make sync
 make doctor
 
 # Lint, typecheck, test, build
-make ci
+make ci-strict
 ```
 
 See [docs/roadmap.md](docs/roadmap.md) for planned work. See `make help` for targets.

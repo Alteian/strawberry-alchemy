@@ -6,6 +6,8 @@ import strawberry
 from strawberry.relay import GlobalID
 from strawberry.types import Info
 
+from strawberry_alchemy.permissions import IsAuthenticated, OwnerPermission, prepare_mutation_resources
+
 from .deletion import PostDeletionHandler
 from .repositories import PostRepository
 from .schemas import PostSchema
@@ -55,10 +57,18 @@ class PostMutations:
     @strawberry.mutation
     async def delete_post(self, info: Info, input: DeletePostInput) -> bool:
         session = await info.context.get_session()
-        await PostRepository(session, deletion_handler=PostDeletionHandler()).delete(
-            id=uuid.UUID(input.id.node_id)
+        repo = PostRepository(session, deletion_handler=PostDeletionHandler())
+        await prepare_mutation_resources(
+            info,
+            {"post_id": input.id},
+            loaders={"post_id": lambda value: repo.get_by_id(value)},
+            permissions=[
+                IsAuthenticated(),
+                OwnerPermission(owner_field="user_id", resource_key="post_id"),
+            ],
         )
-        return True
+        report = await repo.delete(id=uuid.UUID(input.id.node_id), strict=False)
+        return not report.has_failures
 
 
 @strawberry.type

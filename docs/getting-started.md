@@ -4,7 +4,7 @@ This page walks through building a minimal blog API (Post / Comment) with
 strawberry-alchemy, step by step.
 
 A complete, importable version of this walkthrough (plus tests) lives in
-[`examples/blog`](../examples/blog). Prefer that tree when you want copy-pasteable
+[`examples/blog`](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog). Prefer that tree when you want copy-pasteable
 modules that stay in sync with the library.
 
 The app exposes: a Relay `node` query, a `list` query with filters and pagination,
@@ -72,7 +72,7 @@ class PostAccessFilter(AccessControlFilter):
 ```
 
 Note: subclasses must be named `*AccessFilter` (enforced by a metaclass) and must
-declare `model_class`. See [Filtering → Access-control filters](filtering.md#access-control-filters)
+declare `model_class`. See [Filtering → Access-control filters](filtering.md#access-control-filters-row-level-security)
 for production patterns.
 
 ## 3. Define your GraphQL types

@@ -9,23 +9,24 @@ row-level security, permissions, and output mapping.
 
 | Module | What it does |
 |---|---|
-| **QueryOptimizer** | Analyzes the incoming GraphQL selection set and builds one optimized SQLAlchemy query: automatic `selectinload` for nested relationships, `defer()` for unrequested columns, and SQL `EXISTS` / `COUNT` subquery annotations |
-| **`optimize_field` hints** | Declarative decorators for computed fields: `PrefetchRelated`, `SelectColumns`, `AnnotateExists`, `AnnotateAnyExists`, `AnnotateCount`, `AnnotateCustom` |
-| **FilterBuilder** | Translates Strawberry filter inputs into SQLAlchemy `WHERE` clauses using a declarative operator system, with `AND` / `OR` nesting, relationship traversal, and per-model custom filters |
-| **Types** | `BaseNodeType` (Relay `Node` with UUID id + timestamps), `OptimizedListConnection` / `Edge` / `PageInfo` Relay pagination, `ListResult` |
-| **Repository** | Generic async CRUD (`create`, `update`, `delete`, relation management) with lifecycle hooks and dependent-map cascade deletion |
-| **Mapping** | Async helpers to convert SQLAlchemy instances into Strawberry types while respecting the selected field tree (no over-fetching of lazy attributes) |
-| **Permissions** | Protocol-based permission primitives (`IsAuthenticated`, `RolePermission`, `OwnerPermission`, `ObjectAccessPermission`), a resolver base class, and a resource-bag helper |
-| **Models & Schema** | Tiny SQLAlchemy `DeclarativeBase` with UUID primary key + timestamps, and `BaseSchema` — a Pydantic base that is safe to validate from ORM instances |
+| **QueryOptimizer** | Analyzes the incoming GraphQL selection set and builds one optimized SQLAlchemy query: automatic `selectinload` for nested relationships, `defer()` for unrequested columns, and SQL `EXISTS` / `COUNT` / ancestry CTE annotations |
+| **`optimize_field` hints** | Declarative decorators: `PrefetchRelated`, `SelectColumns`, `AnnotateExists`, `AnnotateAnyExists`, `AnnotateCount`, `AnnotateCustom`, `AnnotateAncestry` |
+| **FilterBuilder** | Strawberry filter inputs → SQLAlchemy `WHERE`, with `AND` / `OR`, relationship traversal, custom filters, and Postgres JSONB lookups (`JSONFilter`) |
+| **Types** | `BaseNodeType` (Relay `Node` with UUID id + timestamps), `OptimizedListConnection` / `Edge` / `PageInfo`, `ListResult` |
+| **Repository** | Async CRUD with `DeletionReport` / `strict`, soft-delete helpers, relation management, cascade deletion handlers |
+| **Mapping** | Async helpers to convert SQLAlchemy instances into Strawberry types while respecting the selected field tree |
+| **Permissions** | `IsAuthenticated`, `RolePermission`, `OwnerPermission`, `ObjectAccessPermission`, resource-bag helpers |
+| **Postgres RLS** | Session GUC helpers (`apply_rls_context` / `set_rls_guc`) for app-owned `CREATE POLICY` DDL |
+| **Models & Schema** | `Base` (+ optional `SoftDeleteMixin`), `BaseSchema` Pydantic base safe to validate from ORM instances |
 | **Utilities** | `camel_to_snake`, `Ordering` enum, `NotFoundError` |
 
 ## Requirements
 
 - Python `>= 3.13`
-- `strawberry-graphql >= 0.220`
-- `sqlalchemy` (async usage)
-- `pydantic >= 2.0`
-- `python-dateutil`
+- `strawberry-graphql >= 0.339.1`
+- `sqlalchemy[asyncio] >= 2.1.6`
+- `pydantic >= 2.14`
+- `python-dateutil >= 4.0`
 
 ## Installation
 
@@ -58,7 +59,7 @@ A complete walkthrough of these pieces working together is in
 ## Documentation index
 
 - [Getting started](getting-started.md) — full walkthrough: models, types, filters, queries, mutations, schema
-- [Blog example](../examples/blog/README.md) — runnable sketch covering the full feature set
+- [Blog example](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog) — runnable core-pattern sketch (not every 0.3/0.4 API)
 - [Types & models](types-and-models.md) — `BaseNodeType`, `ListResult`, `OptimizedListConnection`, the `Base` model
 - [Queries](queries.md) — `resolve_node`, `resolve_list`, `resolve_connection`, ordering, pagination
 - [Query optimizer](query-optimizer.md) — automatic load strategies, `@optimize_field` hints, `QueryAnalyzer`
@@ -76,9 +77,9 @@ A complete walkthrough of these pieces working together is in
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
 make sync && make doctor
-make ci
+make ci-strict
 ```
 
 ## License
 
-[MIT](../LICENSE)
+[MIT](https://github.com/Alteian/strawberry-alchemy/blob/master/LICENSE)

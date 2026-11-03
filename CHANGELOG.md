@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-03
+
+### Added
+
+- **Nested relation ACL** — registered `AccessControlFilter` criteria apply on eager
+  `selectinload` relations (not only the root query / `totalCount`).
+- **JSONB key traversal + selection trim** — nested keys (e.g. `title.cs.icontains`)
+  compile to `column['cs'].astext` filters; partial JSONB selections stay undeferred
+  and trim output keys to the selection tree.
+- **Postgres CI** — GitHub Actions Postgres 16 service job runs `@pytest.mark.postgres`
+  for RLS GUCs and JSONB operators (`make test-postgres`).
+- **`prepare_mutation_resources`** — GlobalID parse → loaders → permission bag helper
+  for mutation resolvers.
+- **`register_global_id_type`** — optional encode-side registry for non-`*_id` FK fields
+  (`strawberry_alchemy.mapping`).
+- **`QueryAnalyzer(on_report=...)`** — hook to export `QueryReport` into OTel/metrics.
+- **MkDocs** — `mkdocs.yml` + `make docs` / `make docs-serve` (Material theme).
+- Coverage `fail_under = 68`; `make ci` ≡ `ci-strict` (lint + mypy + test + build).
+
+### Changed
+
+- Docs honesty: README / index version floors and feature callouts; nested-ACL behavior
+  documented; blog example no longer billed as the full API surface.
+- `IdentityLike` is a stable identity protocol (experimental note removed).
+- `examples/blog` uses `SoftDeleteMixin` / `soft_delete_field` and
+  `prepare_mutation_resources` on delete.
+
 ## [0.4.0] — 2026-11-03
 
 ### Added
