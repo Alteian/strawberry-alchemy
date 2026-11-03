@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-import strawberry
 from sqlalchemy import String, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -27,12 +27,6 @@ class Doc(_PgBase):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     title: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     owner_id: Mapped[str] = mapped_column(String(64))
-
-
-@strawberry.input
-class LocalizedStringFilter:
-    cs: StringFilter | None = strawberry.UNSET
-    en: StringFilter | None = strawberry.UNSET
 
 
 @pytest.fixture
@@ -66,14 +60,19 @@ async def test_jsonb_key_filter_executes(pg_session: AsyncSession, docs_table: N
     )
     await pg_session.commit()
 
+    # Flattened key path (title__cs) — same shape FilterBuilder emits from GraphQL inputs.
     builder = FilterBuilder()
-    expr = await builder.build_field_filter(
-        Doc,
-        "title",
-        LocalizedStringFilter(cs=StringFilter(icontains="byt")),
+    expr = await asyncio.wait_for(
+        builder.build_field_filter(Doc, "title__cs", StringFilter(icontains="byt")),
+        timeout=15,
     )
     assert expr is not None
-    rows = (await pg_session.execute(select(Doc).where(expr))).scalars().all()
+    rows = (
+        await asyncio.wait_for(
+            pg_session.execute(select(Doc).where(expr)),
+            timeout=15,
+        )
+    ).scalars().all()
     assert len(rows) == 1
     assert rows[0].title["cs"] == "Prodej bytu"
 
