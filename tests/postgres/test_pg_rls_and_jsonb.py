@@ -31,8 +31,10 @@ class Doc(_PgBase):
 
 @pytest.fixture
 async def docs_table(pg_engine: AsyncEngine) -> None:
+    # Create only — do not DROP in teardown while a session may still hold locks
+    # (asyncpg then blocks until the step times out). The CI Postgres is ephemeral.
     create_ddl = """
-    CREATE TABLE sa_pg_docs (
+    CREATE TABLE IF NOT EXISTS sa_pg_docs (
         id UUID PRIMARY KEY,
         title JSONB NOT NULL DEFAULT '{}'::jsonb,
         owner_id VARCHAR(64) NOT NULL
@@ -42,8 +44,6 @@ async def docs_table(pg_engine: AsyncEngine) -> None:
         await asyncio.wait_for(conn.execute(text("DROP TABLE IF EXISTS sa_pg_docs")), timeout=15)
         await asyncio.wait_for(conn.execute(text(create_ddl)), timeout=15)
     yield
-    async with pg_engine.begin() as conn:
-        await asyncio.wait_for(conn.execute(text("DROP TABLE IF EXISTS sa_pg_docs")), timeout=15)
 
 
 @pytest.mark.asyncio
