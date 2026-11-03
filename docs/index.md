@@ -62,6 +62,7 @@ A complete walkthrough of these pieces working together is in
 - [Types & models](types-and-models.md) — `BaseNodeType`, `ListResult`, `OptimizedListConnection`, the `Base` model
 - [Queries](queries.md) — `resolve_node`, `resolve_list`, `resolve_connection`, ordering, pagination
 - [Query optimizer](query-optimizer.md) — automatic load strategies, `@optimize_field` hints, `QueryAnalyzer`
+- [Postgres RLS](postgres-rls.md) — session GUC helpers for app-owned row-level policies
 - [Filtering](filtering.md) — filter inputs, operators, `AND`/`OR`, custom filters, access-control filters
 - [Repository](repository.md) — CRUD, relation management, deletion handlers
 - [Mapping & schema](mapping-and-schema.md) — `BaseSchema`, `dump_for_db`, `to_type`, mapping helpers

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-03
+
+### Added
+
+- **Postgres RLS session GUCs** — `apply_rls_context`, `set_rls_guc`, and
+  `clear_rls_context` set transaction-local `app.*` settings for app-owned
+  `CREATE POLICY` DDL. See [docs/postgres-rls.md](docs/postgres-rls.md).
+
 ## [0.3.0] — 2026-11-03
 
 ### Added

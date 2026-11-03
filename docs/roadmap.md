@@ -31,8 +31,8 @@
 - Optional soft-delete helpers (`SoftDeleteMixin`, `soft_delete_field`).
 - JSONB filter lookups + `JSONFilter` input.
 
-## Later — 0.4.0
+## Done in 0.4.0
 
-- Postgres RLS session GUC plumbing (`SET LOCAL` / `set_config` from GraphQL
-  context); app-owned `CREATE POLICY` docs/example; keep Python
-  `AccessControlFilter` as optional defense-in-depth.
+- Postgres RLS session GUC helpers (`apply_rls_context` / `set_rls_guc` /
+  `clear_rls_context`); app-owned `CREATE POLICY` docs; Python
+  `AccessControlFilter` remains optional defense-in-depth.

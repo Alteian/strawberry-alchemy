@@ -68,8 +68,15 @@ from strawberry_alchemy import (
 
     # utils
     camel_to_snake,
+
+    # postgres RLS session GUCs
+    apply_rls_context,
+    clear_rls_context,
+    set_rls_guc,
 )
 ```
+
+See [Postgres RLS](postgres-rls.md) for policy DDL and session wiring.
 
 ## Types
 

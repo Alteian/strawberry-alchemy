@@ -61,6 +61,7 @@ from strawberry_alchemy.permissions import (
     fetch_and_check_permissions,
     map_ids_to_models,
 )
+from strawberry_alchemy.postgres import apply_rls_context, clear_rls_context, set_rls_guc
 from strawberry_alchemy.repository import (
     BaseDeletionHandler,
     BaseRepository,
@@ -134,7 +135,9 @@ __all__ = (
     "SoftDeleteMixin",
     "StringFilter",
     "UserLike",
+    "apply_rls_context",
     "camel_to_snake",
+    "clear_rls_context",
     "extract_at_path",
     "extract_global_ids_from_info",
     "fetch_and_check_permissions",
@@ -147,5 +150,6 @@ __all__ = (
     "merge_dependency_trees",
     "normalize_dependency_fields",
     "selection_to_model_fields",
+    "set_rls_guc",
     "source_path_to_dependency_tree",
 )

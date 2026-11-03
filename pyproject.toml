@@ -1,6 +1,6 @@
 [project]
 name = "strawberry-alchemy"
-version = "0.3.0"
+version = "0.4.0"
 description = "Toolkit for fast and easy strawberry+sqlalchemy apis"
 readme = "README.md"
 license = "MIT"
