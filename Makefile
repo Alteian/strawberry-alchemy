@@ -5,8 +5,9 @@
 #   make <target>          - run a target
 #   make test ARGS="-k x"  - forward args to pytest
 #
-# Tool versions come from mise.toml (local + CI). Every uv invocation goes through
-# `mise exec` so PATH pollution cannot pick a different uv/python.
+# Tool versions come from mise.toml (local + CI via jdx/mise-action).
+# We put mise shims/bin-paths on PATH and call `uv` directly — nesting
+# `mise exec -- uv run pytest` has hung GitHub Actions postgres jobs.
 
 BLUE   := \033[0;34m
 GREEN  := \033[0;32m
@@ -16,7 +17,14 @@ NC     := \033[0m
 
 ARGS ?=
 MISE ?= mise
-UV   := $(MISE) exec -- uv
+
+# Prefer mise-managed tools when available (no-op if mise missing / already activated).
+MISE_PATHS := $(shell command -v $(MISE) >/dev/null 2>&1 && $(MISE) bin-paths 2>/dev/null | paste -sd: -)
+ifneq ($(MISE_PATHS),)
+export PATH := $(MISE_PATHS):$(PATH)
+endif
+
+UV := uv
 
 .DEFAULT_GOAL := help
 
@@ -61,6 +69,7 @@ hooks: ## Install pre-commit git hooks
 doctor: ## Check local toolchain (mise pins in mise.toml)
 	@command -v $(MISE) >/dev/null || { printf "$(YELLOW)FAIL: mise missing — install from https://mise.jdx.dev$(NC)\n"; exit 1; }
 	@$(MISE) install
+	@command -v $(UV) >/dev/null || { printf "$(YELLOW)FAIL: uv missing after mise install$(NC)\n"; exit 1; }
 	@printf "$(GREEN)mise:$(NC)    " && $(MISE) --version
 	@printf "$(GREEN)uv:$(NC)      " && $(UV) --version
 	@printf "$(GREEN)Python:$(NC)  " && $(UV) run python -c 'import sys; print(sys.version.split()[0]); assert sys.version_info >= (3, 13), sys.version'

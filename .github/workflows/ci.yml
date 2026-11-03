@@ -88,6 +88,7 @@ jobs:
 
       - run: make sync-frozen
       - run: make test-postgres
+        timeout-minutes: 5
 
   build:
     runs-on: ubuntu-latest

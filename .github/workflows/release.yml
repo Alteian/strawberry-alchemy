@@ -67,6 +67,7 @@ jobs:
       - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
       - run: make sync-frozen
       - run: make test-postgres
+        timeout-minutes: 5
 
   publish:
     runs-on: ubuntu-latest
