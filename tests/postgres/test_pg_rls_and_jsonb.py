@@ -31,16 +31,16 @@ class Doc(_PgBase):
 
 @pytest.fixture
 async def docs_table(pg_engine: AsyncEngine) -> None:
-    ddl = """
-    DROP TABLE IF EXISTS sa_pg_docs;
+    create_ddl = """
     CREATE TABLE sa_pg_docs (
         id UUID PRIMARY KEY,
         title JSONB NOT NULL DEFAULT '{}'::jsonb,
         owner_id VARCHAR(64) NOT NULL
-    );
+    )
     """
     async with pg_engine.begin() as conn:
-        await asyncio.wait_for(conn.execute(text(ddl)), timeout=15)
+        await asyncio.wait_for(conn.execute(text("DROP TABLE IF EXISTS sa_pg_docs")), timeout=15)
+        await asyncio.wait_for(conn.execute(text(create_ddl)), timeout=15)
     yield
     async with pg_engine.begin() as conn:
         await asyncio.wait_for(conn.execute(text("DROP TABLE IF EXISTS sa_pg_docs")), timeout=15)
