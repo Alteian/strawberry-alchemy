@@ -1,9 +1,9 @@
 # Toolchain pins shared by local dev and CI (via jdx/mise-action).
 # Tasks stay in the Makefile — mise only manages tool versions.
-# Exact patch versions so CI matrix + `mise install --locked` stay aligned.
+# CI matrix overrides Python with MISE_PYTHON_VERSION (see workflows).
 
 [tools]
-python = ["3.13.18", "3.14.8"]
+python = "3.13"
 uv = "0.13.6"
 
 [settings]

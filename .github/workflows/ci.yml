@@ -42,8 +42,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        # Exact patches must match mise.toml / mise.lock for --locked installs.
-        python-version: ["3.13.18", "3.14.8"]
+        python-version: ["3.13", "3.14"]
 
     env:
       MISE_PYTHON_VERSION: ${{ matrix.python-version }}

@@ -11,7 +11,7 @@ Install [mise](https://mise.jdx.dev), then:
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-mise install          # Python + uv from mise.toml / mise.lock
+mise install          # Python + uv from mise.toml
 make sync
 make doctor
 make hooks            # optional: install pre-commit

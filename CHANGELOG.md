@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Local + CI toolchain is pinned with **mise** (`mise.toml` / `mise.lock`);
+- Local + CI toolchain is pinned with **mise** (`mise.toml`);
   GitHub Actions uses `jdx/mise-action` and the same Make targets as developers.
 - Docs honesty: README / index version floors and feature callouts; nested-ACL behavior
   documented; blog example no longer billed as the full API surface.
