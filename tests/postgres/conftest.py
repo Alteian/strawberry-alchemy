@@ -22,7 +22,8 @@ def pg_url() -> str:
 
 @pytest.fixture
 async def pg_engine(pg_url: str) -> AsyncEngine:
-    engine = create_async_engine(pg_url, pool_pre_ping=True)
+    # asyncpg `timeout` is connect timeout (seconds); keeps CI from hanging forever.
+    engine = create_async_engine(pg_url, pool_pre_ping=True, connect_args={"timeout": 10})
     try:
         async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))

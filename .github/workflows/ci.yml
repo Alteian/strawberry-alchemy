@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Non-interactive mise (trust config / no prompts) for Make → `mise exec`.
+  MISE_YES: "1"
+
 jobs:
   lint:
     runs-on: ubuntu-latest
