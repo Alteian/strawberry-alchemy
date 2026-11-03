@@ -34,7 +34,7 @@ from strawberry_alchemy import (
     AnnotateAnyExists,     # hint: OR of EXISTS over several relationships
     AnnotateCount,         # hint: correlated COUNT subquery
     AnnotateCustom,        # hint: custom SQL expression + optional mapper
-    AnnotateAncestry,      # hint: ancestry CTE (reserved/experimental)
+    AnnotateAncestry,      # hint: recursive parent-walk CTE (ids | chain)
     build_recursive_dependency_tree,
     merge_dependency_trees,
     normalize_dependency_fields,
@@ -217,7 +217,7 @@ class AnnotateCustom:
     filter_current_user: bool = False
 
 @dataclass(frozen=True)
-class AnnotateAncestry:                # reserved — subquery builder not implemented yet
+class AnnotateAncestry:                # recursive CTE; value_mode "ids"|"chain"
     relationship: str
     parent_field: str = "parent_id"
     id_field: str = "id"
@@ -320,27 +320,39 @@ class AccessControlFilter(metaclass=AccessControlMeta):   # subclass names must 
 ```python
 class BaseRepository:
     relation_models: ClassVar[dict[str, type]] = {}
+    soft_delete_field: ClassVar[str | None] = None   # e.g. "deleted_at"
 
     def __init__(self, session: AsyncSession, model_cls, schema_cls, *, deletion_handler=None)
 
-    async def get_by_id(self, id: uuid.UUID, options=None) -> SchemaT          # raises NotFoundError
-    async def get_by_ids(self, ids, options=None) -> list[SchemaT]
+    async def get_by_id(self, id: uuid.UUID, options=None, *, include_deleted=False) -> SchemaT
+    async def get_by_ids(self, ids, options=None, *, include_deleted=False) -> list[SchemaT]
     async def create(self, schema, should_commit=True) -> SchemaT
     async def update(self, schema, should_commit=True, instance=None) -> SchemaT
-    async def delete(self, id, should_commit=True, instance=None) -> None
+    async def delete(self, id, should_commit=True, instance=None, *, strict=False) -> DeletionReport
+    async def soft_delete(self, id, should_commit=True, instance=None) -> SchemaT
     async def add_related(self, id, relation_name, related_ids, should_commit=True) -> SchemaT
     async def remove_related(self, id, relation_name, related_ids, should_commit=True) -> SchemaT
 ```
 
-### `BaseDeletionHandler[ModelT]`
+### `BaseDeletionHandler[ModelT]` / `DeletionReport`
 
 ```python
+class DeletionReport:
+    entity_id: uuid.UUID | None
+    failures: list[DeletionFailure]
+    def record(...) / extend(...) / summary() -> str
+    @property
+    def has_failures(self) -> bool
+
+class DeletionPartialFailure(RuntimeError):  # raised when delete(..., strict=True) and failures exist
+    report: DeletionReport
+
 class BaseDeletionHandler:
-    async def collect_dependents(self, session, entity_id, instance) -> DependentMap   # dict[str, list[uuid.UUID]]
-    async def pre_delete(self, session, entity_id, instance, dependents) -> None
-    async def cleanup_external(self, session, entity_id, instance, dependents) -> None
-    async def handle_cascade(self, session, entity_id, dependents) -> None
-    async def post_delete(self, session, entity_id, dependents) -> None
+    def reset_report(self, entity_id=None) -> DeletionReport
+    @property
+    def report(self) -> DeletionReport
+    async def collect_dependents(self, session, entity_id, instance) -> DependentMap
+    async def pre_delete / cleanup_external / handle_cascade / post_delete ...
 ```
 
 ## Schema

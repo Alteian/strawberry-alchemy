@@ -49,6 +49,7 @@ Supported hint types (any combination may be passed):
 | `AnnotateAnyExists(relationships, ...)` | OR of `EXISTS` over several relationships; attribute `_<r1>_<r2>_any_exists` |
 | `AnnotateCount(relationship, filter_current_user=False, to_attr="", filter=None)` | Adds a correlated `COUNT` scalar subquery; lands on `_<relationship>_count` (or `to_attr`) |
 | `AnnotateCustom(relationship, expression, to_attr="", mapper=None, filter_current_user=False)` | Runs a custom SQL expression against the relationship; `mapper` post-processes the raw SQL value per row |
+| `AnnotateAncestry(relationship, parent_field="parent_id", id_field="id", …)` | Recursive parent-walk CTE on the related tree; `value_mode="ids"` (Postgres `array_agg` / sqlite `group_concat`) or `"chain"` (`string_agg` / `group_concat`); lands on `_<relationship>_ancestry` or `to_attr` |
 | Keyword args: `@optimize_field(comments=["id", "body"])` | Shorthand for `PrefetchRelated(relationship=name, fields=...)` |
 
 Hints only fire when the client actually selects the decorated field. The optimizer
@@ -238,7 +239,8 @@ The optimizer:
 3. Builds load options: relationships → recursive `selectinload` with nested options;
    scalar columns not requested → `defer()`.
 4. Builds annotation subqueries for `AnnotateExists` / `AnnotateAnyExists` /
-   `AnnotateCount` / `AnnotateCustom` and attaches them via `query.add_columns(...)`.
+   `AnnotateCount` / `AnnotateCustom` / `AnnotateAncestry` and attaches them via
+   `query.add_columns(...)`.
 5. Applies access control, filters, ordering, limit/offset, and runs the query.
 6. Copies per-row annotation values to `instance._optimizer_annotations`; the mapper
    moves them onto the GraphQL type instance (see [Mapping](mapping-and-schema.md)).

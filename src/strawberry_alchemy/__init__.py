@@ -13,13 +13,14 @@ from strawberry_alchemy.filtering import (
     FilterOperators,
     IDFilter,
     IntFilter,
+    JSONFilter,
     StringFilter,
 )
 from strawberry_alchemy.mapping import (
     map_sqlalchemy_list_to_types,
     map_sqlalchemy_to_type,
 )
-from strawberry_alchemy.models import Base
+from strawberry_alchemy.models import Base, SoftDeleteMixin
 from strawberry_alchemy.optimizer import (
     AnnotateAncestry,
     AnnotateAnyExists,
@@ -63,6 +64,9 @@ from strawberry_alchemy.permissions import (
 from strawberry_alchemy.repository import (
     BaseDeletionHandler,
     BaseRepository,
+    DeletionFailure,
+    DeletionPartialFailure,
+    DeletionReport,
 )
 from strawberry_alchemy.schema import BaseSchema
 from strawberry_alchemy.types import (
@@ -93,6 +97,9 @@ __all__ = (
     "BaseSchema",
     "BooleanFilter",
     "DateTimeFilter",
+    "DeletionFailure",
+    "DeletionPartialFailure",
+    "DeletionReport",
     "Edge",
     "EnumFilter",
     "FilterBuilder",
@@ -104,6 +111,7 @@ __all__ = (
     "IDFilter",
     "IntFilter",
     "IsAuthenticated",
+    "JSONFilter",
     "LeafSelection",
     "ListResult",
     "ModelRegistryLike",
@@ -123,6 +131,7 @@ __all__ = (
     "RolePermission",
     "SelectColumns",
     "SliceMetadata",
+    "SoftDeleteMixin",
     "StringFilter",
     "UserLike",
     "camel_to_snake",

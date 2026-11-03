@@ -2,6 +2,7 @@ from datetime import datetime
 
 import strawberry
 from strawberry.relay import GlobalID
+from strawberry.scalars import JSON
 
 
 @strawberry.input
@@ -64,4 +65,17 @@ class EnumFilter[EnumType]:
     exact: EnumType | None = strawberry.UNSET
     in_: list[EnumType] | None = strawberry.field(default=strawberry.UNSET)
     not_in_: list[EnumType] | None = strawberry.field(default=strawberry.UNSET)
+    isnull: bool | None = strawberry.UNSET
+
+
+@strawberry.input
+class JSONFilter:
+    """Postgres JSONB lookups (requires JSONB columns). Prefixed to avoid string ``contains`` clashes."""
+
+    jsonb_contains: JSON | None = strawberry.UNSET
+    jsonb_contained_by: JSON | None = strawberry.UNSET
+    jsonb_has_key: str | None = strawberry.UNSET
+    jsonb_has_any: list[str] | None = strawberry.UNSET
+    jsonb_has_all: list[str] | None = strawberry.UNSET
+    jsonb_path: str | None = strawberry.UNSET
     isnull: bool | None = strawberry.UNSET

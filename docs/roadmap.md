@@ -24,12 +24,12 @@
 - QueryAnalyzer `end()` + per-query `duration_ms`.
 - Broader `resolve_*` / access-filter-on-`totalCount` integration tests.
 
-## Later — 0.3.0
+## Done in 0.3.0
 
-- Optional soft-delete helpers on `BaseRepository`.
-- Generic `AnnotateAncestry` CTE (replace experimental stub).
-- Deletion reporting / partial-failure mode.
-- JSONB / structured filter helpers.
+- Generic `AnnotateAncestry` recursive CTE (`ids` / `chain`).
+- `DeletionReport` / `strict` / `DeletionPartialFailure` on `delete`.
+- Optional soft-delete helpers (`SoftDeleteMixin`, `soft_delete_field`).
+- JSONB filter lookups + `JSONFilter` input.
 
 ## Later — 0.4.0
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-03
+
+### Added
+
+- **`AnnotateAncestry`** — generic recursive parent-walk CTE (`value_mode`
+  `"ids"` / `"chain"`, dialect-aware aggregates).
+- **`DeletionReport` / `DeletionFailure` / `DeletionPartialFailure`** —
+  `BaseRepository.delete` always returns a report; `strict=True` raises on
+  recorded handler failures; handlers expose `report` / `reset_report`.
+- **Soft-delete helpers** — optional `soft_delete_field` ClassVar,
+  `soft_delete()`, `include_deleted` on reads, and `SoftDeleteMixin`.
+- **JSONB filter lookups** — `jsonb_contains`, `jsonb_contained_by`,
+  `jsonb_has_key`, `jsonb_has_any`, `jsonb_has_all`, `jsonb_path` plus
+  `JSONFilter` input (Postgres JSONB columns).
+
 ## [0.2.3] — 2026-11-03
 
 ### Added

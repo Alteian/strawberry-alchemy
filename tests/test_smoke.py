@@ -45,6 +45,8 @@ def test_filter_operators_registry() -> None:
     assert "icontains" in FilterOperators.LOOKUP_OPERATORS
     assert "in" in FilterOperators.LOOKUP_OPERATORS
     assert "range" in FilterOperators.LOOKUP_OPERATORS
+    assert "jsonb_contains" in FilterOperators.LOOKUP_OPERATORS
+    assert "jsonb_has_key" in FilterOperators.LOOKUP_OPERATORS
 
 
 def test_query_result_defaults() -> None:
@@ -128,7 +130,18 @@ def test_annotate_count_resolved_attr() -> None:
 
 def test_base_deletion_handler_hooks() -> None:
     """Default deletion handler hooks should be no-ops."""
-    from strawberry_alchemy import BaseDeletionHandler
+    from strawberry_alchemy import BaseDeletionHandler, DeletionReport
 
     handler = BaseDeletionHandler()
-    assert handler is not None
+    report = handler.reset_report()
+    assert isinstance(report, DeletionReport)
+    assert report.has_failures is False
+
+
+def test_annotate_ancestry_defaults() -> None:
+    from strawberry_alchemy import AnnotateAncestry
+
+    ann = AnnotateAncestry(relationship="parent")
+    assert ann.resolved_attr == "_parent_ancestry"
+    assert ann.value_mode == "ids"
+    assert ann.include_self is True

@@ -77,12 +77,38 @@ fields left unset are skipped by `dump_for_db`'s `exclude_unset=True` behavior.
 ## Delete
 
 ```python
-await PostRepository(session).delete(id=post_id)
+report = await PostRepository(session).delete(id=post_id)
+# report: DeletionReport — empty failures on success
+
+# Handlers can record soft external failures; raise if you care:
+await PostRepository(session, deletion_handler=handler).delete(id=post_id, strict=True)
 ```
 
-Raises `NotFoundError` if missing. When a `deletion_handler` is provided, the hook
-sequence below runs around `session.delete`; commit happens at the end unless
-`should_commit=False`.
+Raises `NotFoundError` if missing. Always returns a `DeletionReport`. When a
+`deletion_handler` is provided, the hook sequence below runs around
+`session.delete`; commit happens at the end unless `should_commit=False`.
+With `strict=True`, a non-empty failure list raises `DeletionPartialFailure`
+(the DB delete still completed). Handlers record failures via
+`self.report.record(component, operation, target, error)`.
+
+## Soft delete (opt-in)
+
+Hard `delete` is unchanged. For soft-delete, declare a timestamp column on the
+model (or use `SoftDeleteMixin`) and set `soft_delete_field` on the repository:
+
+```python
+from strawberry_alchemy import SoftDeleteMixin, BaseRepository
+
+class Post(Base, SoftDeleteMixin):
+    ...
+
+class PostRepository(BaseRepository[Post, PostSchema]):
+    soft_delete_field = "deleted_at"
+
+await repo.soft_delete(id=post_id)
+await repo.get_by_id(post_id)                      # NotFoundError if soft-deleted
+await repo.get_by_id(post_id, include_deleted=True)
+```
 
 ## Relation management
 

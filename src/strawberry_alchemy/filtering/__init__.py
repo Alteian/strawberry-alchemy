@@ -6,6 +6,7 @@ from .inputs import (
     EnumFilter,
     IDFilter,
     IntFilter,
+    JSONFilter,
     StringFilter,
 )
 from .operators import FilterOperators
@@ -19,5 +20,6 @@ __all__ = (
     "FilterOperators",
     "IDFilter",
     "IntFilter",
+    "JSONFilter",
     "StringFilter",
 )

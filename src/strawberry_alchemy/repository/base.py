@@ -1,8 +1,9 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any, ClassVar, cast
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,7 +12,7 @@ from strawberry import UNSET
 from strawberry_alchemy.exceptions import NotFoundError
 from strawberry_alchemy.schema.base import BaseSchema
 
-from .deletion import BaseDeletionHandler
+from .deletion import BaseDeletionHandler, DeletionPartialFailure, DeletionReport
 
 
 class BaseRepository[
@@ -22,6 +23,8 @@ class BaseRepository[
     model_cls: ClassVar[type[Any]]
     schema_cls: ClassVar[type[BaseSchema]]
     relation_models: ClassVar[dict[str, type[Any]]] = {}
+    # Opt-in soft-delete: set to a column name (e.g. ``"deleted_at"``) when the model has it.
+    soft_delete_field: ClassVar[str | None] = None
 
     def __init__(
         self,
@@ -48,8 +51,27 @@ class BaseRepository[
     def _model_id_attr(self) -> Any:
         return cast("Any", self.model_cls).id
 
-    async def get_by_id(self, id: uuid.UUID, options: Sequence[Any] | None = None) -> SchemaT:
+    def _soft_delete_column(self) -> Any | None:
+        name = type(self).soft_delete_field
+        if not name:
+            return None
+        return getattr(self.model_cls, name, None)
+
+    def apply_not_deleted(self, stmt: Select[Any]) -> Select[Any]:
+        """Exclude soft-deleted rows when ``soft_delete_field`` is configured."""
+        col = self._soft_delete_column()
+        return stmt.where(col.is_(None)) if col is not None else stmt
+
+    async def get_by_id(
+        self,
+        id: uuid.UUID,
+        options: Sequence[Any] | None = None,
+        *,
+        include_deleted: bool = False,
+    ) -> SchemaT:
         stmt = select(self.model_cls).where(self._model_id_attr == id)
+        if not include_deleted:
+            stmt = self.apply_not_deleted(stmt)
         if options:
             stmt = stmt.options(*options)
 
@@ -64,8 +86,12 @@ class BaseRepository[
         self,
         ids: Sequence[uuid.UUID],
         options: Sequence[Any] | None = None,
+        *,
+        include_deleted: bool = False,
     ) -> list[SchemaT]:
         stmt = select(self.model_cls).where(self._model_id_attr.in_(ids))
+        if not include_deleted:
+            stmt = self.apply_not_deleted(stmt)
         if options:
             stmt = stmt.options(*options)
 
@@ -171,7 +197,14 @@ class BaseRepository[
                 f"Invalid data for {self.model_cls.__name__}: {getattr(schema, 'id', '?')}. Error: {e}"
             ) from e
 
-    async def delete(self, id: uuid.UUID, should_commit: bool = True, instance: ModelT | None = None) -> None:
+    async def delete(
+        self,
+        id: uuid.UUID,
+        should_commit: bool = True,
+        instance: ModelT | None = None,
+        *,
+        strict: bool = False,
+    ) -> DeletionReport:
         db_obj = (
             await self.session.merge(instance)
             if instance
@@ -184,6 +217,7 @@ class BaseRepository[
 
         handler = self.deletion_handler
         dependents: dict[str, list[uuid.UUID]] = {}
+        report = handler.reset_report(entity_id=id) if handler is not None else DeletionReport(entity_id=id)
 
         if handler:
             dependents = await handler.collect_dependents(self.session, id, db_obj)
@@ -198,6 +232,44 @@ class BaseRepository[
 
         if should_commit:
             await self.session.commit()
+
+        if strict and report.has_failures:
+            raise DeletionPartialFailure(report)
+        return report
+
+    async def soft_delete(
+        self,
+        id: uuid.UUID,
+        should_commit: bool = True,
+        instance: ModelT | None = None,
+    ) -> SchemaT:
+        """Stamp ``soft_delete_field`` instead of hard-deleting. Requires ClassVar config."""
+        col = self._soft_delete_column()
+        if col is None:
+            raise TypeError(
+                f"{type(self).__name__}.soft_delete_field is not configured "
+                "(set ClassVar soft_delete_field to a model column name, e.g. 'deleted_at')."
+            )
+        field_name = cast("str", type(self).soft_delete_field)
+
+        db_obj = (
+            await self.session.merge(instance)
+            if instance
+            else (
+                await self.session.execute(
+                    self.apply_not_deleted(select(self.model_cls).where(self._model_id_attr == id))
+                )
+            ).scalar_one_or_none()
+        )
+        if db_obj is None:
+            raise NotFoundError(f"{self.model_cls.__name__}: {id}")
+
+        setattr(db_obj, field_name, datetime.now(tz=UTC))
+        await self.session.flush()
+        result = cast("SchemaT", self.schema_cls.model_validate(db_obj))
+        if should_commit:
+            await self.session.commit()
+        return result
 
     async def add_related(
         self,

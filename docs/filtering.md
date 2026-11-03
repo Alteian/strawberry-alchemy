@@ -229,6 +229,10 @@ counts never leak rows the user cannot see.
 
 `FilterOperators.LOOKUP_OPERATORS` maps lookup names to SQL expressions. The full set:
 `exact`, `iexact`, `contains`, `icontains`, `in`, `not_in`, `gt`, `ge`, `lt`, `le`,
-`startswith`, `istartswith`, `endswith`, `iendswith`, `range`, `isnull`.
+`startswith`, `istartswith`, `endswith`, `iendswith`, `range`, `isnull`, plus Postgres
+JSONB lookups `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`,
+`jsonb_has_any`, `jsonb_has_all`, `jsonb_path` (use with
+`sqlalchemy.dialects.postgresql.JSONB` columns and the `JSONFilter` input).
 Case-insensitive/string operators fall back to equality on non-string columns, and
 `parse_filter_value` coerces incoming strings to the column's SQLAlchemy type.
+JSONB helpers are Postgres-oriented; sqlite tests cover registry/compile only.

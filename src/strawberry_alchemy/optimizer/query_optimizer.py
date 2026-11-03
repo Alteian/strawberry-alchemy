@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import and_, literal, or_
+from sqlalchemy import String, and_, literal, or_
+from sqlalchemy import cast as sql_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Mapper, RelationshipProperty, defer, selectinload
@@ -418,7 +419,7 @@ class QueryOptimizer:
             return self._annotation_custom(model, annotation, attr, user_id)
 
         rel_prop = attr.property
-        parent_table = inspect(model).mapped_table
+        parent_table = inspect(model).local_table
 
         if annotation.filter_current_user and user_id is None:
             if isinstance(annotation, AnnotateExists):
@@ -517,7 +518,7 @@ class QueryOptimizer:
             subq = select(parent_fk_col).where(and_(*conditions)).correlate(model)
             if custom_filter is not None:
                 remote_model = rel_prop.mapper.class_
-                remote_table = inspect(remote_model).mapped_table
+                remote_table = inspect(remote_model).local_table
                 subq = subq.join(remote_table, remote_fk_col == remote_model.id)
                 subq = subq.where(custom_filter)
             return subq.exists()
@@ -525,7 +526,7 @@ class QueryOptimizer:
         subq = select(func.count()).select_from(secondary).where(and_(*conditions)).correlate(model)
         if custom_filter is not None:
             remote_model = rel_prop.mapper.class_
-            remote_table = inspect(remote_model).mapped_table
+            remote_table = inspect(remote_model).local_table
             subq = subq.join(remote_table, remote_fk_col == remote_model.id)
             subq = subq.where(custom_filter)
         return subq.scalar_subquery()
@@ -539,7 +540,7 @@ class QueryOptimizer:
         user_id: Any,
     ) -> Any:
         related_model = rel_prop.mapper.class_
-        related_table = inspect(related_model).mapped_table
+        related_table = inspect(related_model).local_table
 
         fk_attr = None
         for col in related_table.columns:
@@ -962,9 +963,124 @@ class QueryOptimizer:
             total_count=total_count if return_total_count else 0,
         )
 
+    def _dialect_name(self) -> str:
+        bind = getattr(self.session, "bind", None)
+        dialect = getattr(bind, "dialect", None) if bind is not None else None
+        name = getattr(dialect, "name", None)
+        return name if isinstance(name, str) and name else "postgresql"
+
+    def _build_ancestry_join_condition(self, rel_prop: Any, parent_table: Any, related_table: Any) -> Any | None:
+        pairs = getattr(rel_prop, "local_remote_pairs", None)
+        if pairs:
+            conditions = [local == remote for local, remote in pairs]
+            if conditions:
+                return and_(*conditions) if len(conditions) > 1 else conditions[0]
+
+        primaryjoin = getattr(rel_prop, "primaryjoin", None)
+        if primaryjoin is not None:
+            return primaryjoin
+
+        # Fallback: FK from parent → related (many-to-one) or related → parent.
+        for col in parent_table.columns:
+            for fk in col.foreign_keys:
+                if fk.column.table.fullname == related_table.fullname:
+                    return col == fk.column
+        for col in related_table.columns:
+            for fk in col.foreign_keys:
+                if fk.column.table.fullname == parent_table.fullname:
+                    return col == fk.column
+        return None
+
+    def _build_ancestry_aggregate(self, ordered_nodes: Any, *, value_mode: str, dialect_name: str) -> Any:
+        node_id_text = sql_cast(ordered_nodes.c.node_id, String)
+        if value_mode == "chain":
+            if dialect_name == "sqlite":
+                aggregate_expr = func.group_concat(node_id_text, "/")
+            else:
+                # Default / postgresql: string_agg
+                aggregate_expr = func.string_agg(node_id_text, literal("/"))
+        elif dialect_name == "sqlite":
+            # SQLite has no array_agg; return a slash-separated id string (same as chain).
+            aggregate_expr = func.group_concat(node_id_text, "/")
+        else:
+            aggregate_expr = func.array_agg(ordered_nodes.c.node_id)
+
+        return select(aggregate_expr).select_from(ordered_nodes).scalar_subquery()
+
     def _build_ancestry_annotation_subquery(
         self,
         model: type[Any],
         annotation: AnnotateAncestry,
     ) -> Any:
-        return None
+        _, attr = self.get_model_attribute(model, annotation.relationship)
+        if attr is None or not self.is_relationship(attr):
+            return None
+
+        rel_prop = attr.property
+        related_model = rel_prop.mapper.class_
+        related_table = inspect(related_model).local_table
+        parent_table = inspect(model).local_table
+
+        id_field = annotation.id_field
+        parent_field = annotation.parent_field
+        if id_field not in related_table.c or parent_field not in related_table.c:
+            return None
+
+        id_col = related_table.c[id_field]
+        parent_col = related_table.c[parent_field]
+
+        if related_model is model:
+            base_cte = (
+                select(
+                    id_col.label("owner_id"),
+                    id_col.label("node_id"),
+                    parent_col.label("parent_id"),
+                    literal(0).label("level"),
+                )
+                .select_from(related_table)
+                .cte(name=annotation.cte_name, recursive=True)
+            )
+        else:
+            join_condition = self._build_ancestry_join_condition(rel_prop, parent_table, related_table)
+            if join_condition is None:
+                return None
+
+            base_cte = (
+                select(
+                    parent_table.c.id.label("owner_id"),
+                    id_col.label("node_id"),
+                    parent_col.label("parent_id"),
+                    literal(0).label("level"),
+                )
+                .select_from(parent_table.join(related_table, join_condition))
+                .where(id_col.is_not(None))
+                .cte(name=annotation.cte_name, recursive=True)
+            )
+
+        parent_alias = related_table.alias(f"{annotation.cte_name}_parent")
+        recursive_cte = base_cte.union_all(
+            select(
+                base_cte.c.owner_id,
+                parent_alias.c[id_field].label("node_id"),
+                parent_alias.c[parent_field].label("parent_id"),
+                (base_cte.c.level + 1).label("level"),
+            ).where(parent_alias.c[id_field] == base_cte.c.parent_id)
+        )
+
+        # Correlate via the ORM attribute so self-referential trees still bind to the
+        # outer SELECT row. ``correlate`` must run before ``subquery()`` or SQLAlchemy
+        # will re-introduce ``model`` into the nested FROM (cross-join all owners).
+        model_id_attr = cast("Any", model).id
+        order_column = recursive_cte.c.level.desc() if annotation.root_first else recursive_cte.c.level.asc()
+        ordered_select = (
+            select(recursive_cte.c.node_id).select_from(recursive_cte).where(recursive_cte.c.owner_id == model_id_attr)
+        )
+        if not annotation.include_self:
+            ordered_select = ordered_select.where(recursive_cte.c.level > 0)
+        ordered_nodes = ordered_select.order_by(order_column).correlate(model).subquery()
+
+        return self._build_ancestry_aggregate(
+            ordered_nodes,
+            value_mode=annotation.value_mode,
+            dialect_name=self._dialect_name(),
+        )
