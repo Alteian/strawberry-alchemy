@@ -30,6 +30,7 @@ class BaseNodeType(Node):
     access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]
     model_class: ClassVar[type[Any]]
     CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {}
+    _custom_filters_registry: ClassVar[dict[type[Any], dict[str, Callable[..., Any]]]] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -65,28 +66,56 @@ class BaseNodeType(Node):
         return instance
 
     @classmethod
-    async def _get_optimized_result(cls, info: Info, **query_kwargs: Any) -> Any:
+    async def _get_optimized_result(
+        cls,
+        info: Info,
+        access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+        **query_kwargs: Any,
+    ) -> Any:
         session = await info.context.get_session()
         optimizer = QueryOptimizer(info, session)
-        optimizer.register_access_filter(cls.model_class, cls.access_filter)
+        optimizer.register_access_filter(
+            cls.model_class,
+            access_filter if access_filter is not None else cls.access_filter,
+        )
 
         async with info.context.db_execution_lock:
             return await optimizer.optimize_query(model=cls.model_class, strawberry_type=cls, **query_kwargs)
 
     @classmethod
-    async def resolve_node(cls, node_id: str, *, info: Info) -> Self | None:
-        resolved = await cls.resolve_nodes(info=info, node_ids=[node_id])
+    async def resolve_node(  # type: ignore[override]  # strawberry-alchemy omits Relay required=; uses optimizer API
+        cls,
+        node_id: str,
+        *,
+        info: Info,
+        access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+    ) -> Self | None:
+        resolved = await cls.resolve_nodes(info=info, node_ids=[node_id], access_filter=access_filter)
         return resolved[0] if resolved else None
 
     @classmethod
-    async def resolve_nodes(cls, info: Info, node_ids: Iterable[str], **kwargs: Any) -> list[Self | None]:
-        result = await cls._get_optimized_result(info, node_ids=node_ids, return_selected_fields=True, **kwargs)
+    async def resolve_nodes(  # type: ignore[override]  # strawberry-alchemy uses positional info + optimizer API
+        cls,
+        info: Info,
+        node_ids: Iterable[str],
+        access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+        **kwargs: Any,
+    ) -> list[Self | None]:
+        result = await cls._get_optimized_result(
+            info,
+            access_filter=access_filter,
+            node_ids=node_ids,
+            return_selected_fields=True,
+            **kwargs,
+        )
         return await map_sqlalchemy_list_to_types(result.items, info, cls, result.selected_fields)
 
     @classmethod
     async def resolve_list(cls, info: Info, filters: Any = strawberry.UNSET, **kwargs: Any) -> ListResult[Self]:
+        access_filter = kwargs.pop("access_filter", None)
         result = await cls._get_optimized_result(
             info,
+            access_filter=access_filter,
             filters=filters,
             return_total_count=True,
             return_selected_fields=True,
@@ -97,9 +126,13 @@ class BaseNodeType(Node):
 
     @classmethod
     async def resolve_connection(cls, info: Info, **kwargs: Any) -> OptimizedListConnection[Self]:
+        access_filter = kwargs.pop("access_filter", None)
         session = await info.context.get_session()
         optimizer = QueryOptimizer(info, session)
-        optimizer.register_access_filter(cls.model_class, cls.access_filter)
+        optimizer.register_access_filter(
+            cls.model_class,
+            access_filter if access_filter is not None else cls.access_filter,
+        )
         async with info.context.db_execution_lock:
             return await OptimizedListConnection.resolve_connection(
                 optimizer=optimizer,

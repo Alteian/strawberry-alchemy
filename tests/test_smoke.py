@@ -84,6 +84,7 @@ def test_query_analyzer_lifecycle() -> None:
     analyzer.record_deferred(["description"])
     analyzer.record_relationship("tags")
     analyzer.record_annotation("comments", "COUNT")
+    analyzer.record_query("data", "SELECT 1", row_count=5, duration_ms=1.25)
     analyzer.record_result(count=5, total_count=10)
     analyzer.end()
 
@@ -91,6 +92,8 @@ def test_query_analyzer_lifecycle() -> None:
     assert report.model_name == "FakeModel"
     assert report.result_count == 5
     assert report.total_count == 10
+    assert report.total_duration_ms >= 0
+    assert report.queries[0].duration_ms == 1.25
     assert "description" in report.deferred_fields
     assert "tags" in report.relationships_loaded
     assert "COUNT(comments)" in report.annotations

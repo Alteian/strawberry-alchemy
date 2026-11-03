@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeGuard, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -69,7 +69,7 @@ class RelayConnectionSelection:
     total_count: bool = False
 
 
-def _is_relay_edges(value: Any) -> bool:
+def _is_relay_edges(value: Any) -> TypeGuard[dict[str, Any]]:
     return isinstance(value, dict) and isinstance(value.get("node"), dict)
 
 
@@ -88,8 +88,7 @@ def parse_selection_tree(
     if selected_fields and set(selected_fields.keys()).issubset(relay_wrapper_keys):
         edges = selected_fields.get("edges")
         if _is_relay_edges(edges):
-            node = edges["node"]
-            assert isinstance(node, dict)
+            node = cast("dict[str, Any]", edges["node"])
             return RelayConnectionSelection(
                 node_fields=dict(node),
                 page_info=dict(selected_fields["pageInfo"])

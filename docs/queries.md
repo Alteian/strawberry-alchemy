@@ -22,7 +22,8 @@ class PostQueries:
 
 `node_id` is the raw (non-base64) id string from `GlobalID.node_id`. You can also
 pass `resolve_node` extra keyword arguments that are forwarded to
-`QueryOptimizer.optimize_query` (e.g. `filter_context_user=True`).
+`QueryOptimizer.optimize_query` (e.g. `filter_context_user=True`), plus
+`access_filter=` to override the type's ClassVar for that call.
 
 ## `resolve_nodes` — fetch several entities in one query
 

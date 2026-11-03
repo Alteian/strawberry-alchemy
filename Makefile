@@ -89,7 +89,7 @@ test: ## pytest (ARGS=...)
 
 ci: lint test build ## Local CI pipeline (lint + test + build)
 
-ci-strict: lint typecheck test build ## CI plus mypy (mypy still has known debt)
+ci-strict: lint typecheck test build ## Full local CI (lint + mypy + test + build)
 
 build: ## Build distributable packages
 	uv build

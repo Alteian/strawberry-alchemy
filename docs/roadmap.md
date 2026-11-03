@@ -17,13 +17,22 @@
 - Hardened GlobalID decode in permissions input parsing.
 - Added repository relation and FilterBuilder error regression tests.
 
-## Later candidates
+## Done in 0.2.3
 
-- Clear remaining mypy debt so CI typecheck can become a hard gate.
+- Cleared mypy debt; CI typecheck is a hard gate.
+- Per-call `access_filter` override on `resolve_*`.
+- QueryAnalyzer `end()` + per-query `duration_ms`.
+- Broader `resolve_*` / access-filter-on-`totalCount` integration tests.
+
+## Later — 0.3.0
+
 - Optional soft-delete helpers on `BaseRepository`.
 - Generic `AnnotateAncestry` CTE (replace experimental stub).
 - Deletion reporting / partial-failure mode.
-- Per-call `access_filter` override on `resolve_*`.
-- QueryAnalyzer UX improvements.
 - JSONB / structured filter helpers.
-- Broader `resolve_*` / access-filter-on-`totalCount` integration tests.
+
+## Later — 0.4.0
+
+- Postgres RLS session GUC plumbing (`SET LOCAL` / `set_config` from GraphQL
+  context); app-owned `CREATE POLICY` docs/example; keep Python
+  `AccessControlFilter` as optional defense-in-depth.

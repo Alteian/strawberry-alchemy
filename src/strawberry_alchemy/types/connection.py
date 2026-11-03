@@ -3,7 +3,9 @@ from typing import Any
 
 import strawberry
 from strawberry import relay
-from strawberry.relay import Edge, PageInfo
+from strawberry.relay import Edge as Edge
+from strawberry.relay import Node
+from strawberry.relay import PageInfo as PageInfo
 from strawberry.relay.utils import from_base64
 from strawberry.types import Info
 
@@ -12,9 +14,11 @@ from strawberry_alchemy.optimizer.query_optimizer import (
     QueryOptimizer,
 )
 
+__all__ = ["Edge", "OptimizedListConnection", "PageInfo", "SliceMetadata"]
+
 
 class SliceMetadata:
-    def __init__(self, start: int, end: int | None, requested_count: int | None) -> None:
+    def __init__(self, start: int | None, end: int | None, requested_count: int | None) -> None:
         self.start = start
         self.end = end
         self.requested_count = requested_count
@@ -36,7 +40,7 @@ class SliceMetadata:
         max_results: int | None = None,
     ) -> "SliceMetadata":
         max_results = max_results or info.schema.config.relay_max_results
-        start = 0
+        start: int | None = 0
         end: int | None = None
         requested_count: int | None = None
 
@@ -55,31 +59,31 @@ class SliceMetadata:
                 raise ValueError(f"Argument 'first' cannot be higher than {max_results}.")
             requested_count = first
             if end is not None:
-                start = max(start, end - first)
+                start = max(start or 0, end - first)
             else:
-                end = start + first
+                end = (start or 0) + first
         elif last is not None:
             if last < 0:
                 raise ValueError("Argument 'last' must be a non-negative integer.")
             if last > max_results:
                 raise ValueError(f"Argument 'last' cannot be higher than {max_results}.")
             requested_count = last
-            start = max(start, end - last) if end is not None else None
+            start = max(start or 0, end - last) if end is not None else None
 
         if end is None and requested_count is None:
-            end = start + max_results
+            end = (start or 0) + max_results
 
         return cls(start=start, end=end, requested_count=requested_count)
 
 
 @strawberry.type
-class OptimizedListConnection[NodeType](relay.Connection[NodeType]):
+class OptimizedListConnection[NodeType: Node](relay.Connection[NodeType]):
     edges: list[Edge[NodeType]]
     page_info: PageInfo
     total_count: int
 
     @classmethod
-    async def resolve_connection(
+    async def resolve_connection(  # type: ignore[override]  # strawberry-alchemy uses optimizer API, not Relay iterators
         cls,
         optimizer: QueryOptimizer,
         model: type[Any],
@@ -157,14 +161,14 @@ class OptimizedListConnection[NodeType](relay.Connection[NodeType]):
             Edge(
                 node=item,
                 cursor=base64.b64encode(
-                    f"arrayconnection:{idx + slice_metadata.start}".encode(),
+                    f"arrayconnection:{idx + (slice_metadata.start or 0)}".encode(),
                 ).decode(),
             )
             for idx, item in enumerate(instance_types)
         ]
 
         has_next_page = len(instances) > len(edges) if slice_metadata.requested_count else False
-        has_previous_page = slice_metadata.start > 0
+        has_previous_page = (slice_metadata.start or 0) > 0
 
         page_info = PageInfo(
             has_next_page=has_next_page,

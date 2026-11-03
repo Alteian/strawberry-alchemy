@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import dateutil.parser
 import strawberry
-from sqlalchemy import BinaryExpression, Boolean, DateTime, Float, Integer, String, and_, or_
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, and_, or_
 from sqlalchemy.orm import aliased
+from sqlalchemy.orm.util import AliasedClass
 from strawberry.relay import GlobalID
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm.util import AliasedClass
 
 from .operators import FilterOperators
 
-SQL_ALCHEMY_TYPE_MAPPING = {
+if TYPE_CHECKING:
+    from sqlalchemy.sql.elements import ColumnElement
+
+SQL_ALCHEMY_TYPE_MAPPING: dict[type[Any], Callable[[Any], Any]] = {
     String: str,
     Integer: int,
     Float: float,
     Boolean: lambda v: v.lower() in ("true", "1", "t", "y", "yes") if isinstance(v, str) else bool(v),
 }
 
+type ModelOrAlias = type[Any] | AliasedClass[Any]
+
 
 class FilterBuilder:
     def __init__(self, custom_filters: dict[type, dict[str, Any]] | None = None) -> None:
-        self.alias_map: dict[str, AliasedClass | type] = {}
-        self._join_paths: dict[str, list[tuple[str, type]]] = {}
+        self.alias_map: dict[str, ModelOrAlias] = {}
+        self._join_paths: dict[str, list[tuple[str, type[Any]]]] = {}
         self.custom_filters: dict[type, dict[str, Any]] = custom_filters or {}
 
     def _is_filter_input(self, val: Any) -> bool:
@@ -47,7 +50,7 @@ class FilterBuilder:
             elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
                 return [await self.parse_filter_value(v, field) for v in value]
             parse_func = SQL_ALCHEMY_TYPE_MAPPING.get(type(field_type))
-            if parse_func:
+            if parse_func is not None:
                 return parse_func(value)
 
             return value
@@ -57,25 +60,25 @@ class FilterBuilder:
 
     async def build_field_filter(
         self,
-        model: type[Any],
+        model: ModelOrAlias,
         field: str,
         value: Any,
         lookup: str = "exact",
         path_prefix: str = "",
-    ) -> BinaryExpression | None:
+    ) -> ColumnElement[bool] | None:
         if "__" in field:
             field_name, actual_lookup = field.rsplit("__", 1)
         else:
             field_name = field
             actual_lookup = lookup
 
-        original_class = model
+        original_class: type[Any] = cast("type[Any]", model)
         if hasattr(model, "_aliased_insp"):
             original_class = model._aliased_insp.mapper.class_
         model_custom_filters = self.custom_filters.get(original_class, {})
         if field_name in model_custom_filters:
             handler = model_custom_filters[field_name]
-            return handler(model, value)
+            return cast("ColumnElement[bool] | None", handler(model, value))
 
         if not hasattr(model, field_name):
             raise ValueError(f"Field '{field_name}' not found in model {model.__name__}")
@@ -83,7 +86,7 @@ class FilterBuilder:
         model_field = getattr(model, field_name)
 
         if hasattr(model_field, "property") and hasattr(model_field.property, "mapper"):
-            related_model = model_field.property.mapper.class_
+            related_model = cast("type[Any]", model_field.property.mapper.class_)
             current_path = f"{path_prefix}.{field_name}" if path_prefix else field_name
 
             if related_model is model and field_name in ("parent", "children"):
@@ -110,7 +113,7 @@ class FilterBuilder:
         if actual_lookup in FilterOperators.LOOKUP_OPERATORS and not self._is_filter_input(value):
             parsed_value = await self.parse_filter_value(value, model_field)
             operator_func = FilterOperators.LOOKUP_OPERATORS[actual_lookup]
-            return operator_func(model_field, parsed_value)
+            return cast("ColumnElement[bool] | None", operator_func(model_field, parsed_value))
 
         if self._is_filter_input(value):
             expressions = []
@@ -136,7 +139,7 @@ class FilterBuilder:
         parsed_value = await self.parse_filter_value(value, model_field)
 
         operator_func = FilterOperators.LOOKUP_OPERATORS[actual_lookup]
-        return operator_func(model_field, parsed_value)
+        return cast("ColumnElement[bool] | None", operator_func(model_field, parsed_value))
 
     @staticmethod
     def _combine_expressions(expressions: list[Any], combiner: Any) -> Any | None:
@@ -148,9 +151,9 @@ class FilterBuilder:
 
     async def build_filters(
         self,
-        model: type[Any],
+        model: ModelOrAlias,
         filters: dict[str, Any],
-    ) -> BinaryExpression | None:
+    ) -> ColumnElement[bool] | None:
         if not filters:
             return None
 
@@ -224,9 +227,9 @@ class FilterBuilder:
         if filters is None or filters == strawberry.UNSET:
             return {}
 
-        filter_dict = {}
+        filter_dict: dict[str, Any] = {}
 
-        def add_filter(key: str, value: Any):
+        def add_filter(key: str, value: Any) -> None:
             if value is not None and value != strawberry.UNSET:
                 filter_dict[key] = value
 
@@ -234,7 +237,11 @@ class FilterBuilder:
         return filter_dict
 
     def process_filter_object(
-        self, filter_obj: Any, filter_dict: dict[str, Any], add_filter: Callable, parent_key: str = ""
+        self,
+        filter_obj: Any,
+        filter_dict: dict[str, Any],
+        add_filter: Callable[[str, Any], None],
+        parent_key: str = "",
     ) -> None:
         nested_and_filters: list[dict[str, Any]] = []
         nested_or_filters: list[dict[str, Any]] = []

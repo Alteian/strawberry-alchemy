@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import strawberry
 from sqlalchemy.inspection import inspect
@@ -13,8 +13,10 @@ from strawberry_alchemy.mapping.output_normalization import (
 T = TypeVar("T")
 UNSET = strawberry.UNSET
 
+type FieldSelectionDict = dict[str, bool | FieldSelectionDict]
 
-def _requested_leaf_fields(selected_fields: dict[str, bool | dict]) -> set[str]:
+
+def _requested_leaf_fields(selected_fields: FieldSelectionDict) -> set[str]:
     return {name for name, selected in selected_fields.items() if selected is True}
 
 
@@ -44,7 +46,7 @@ async def map_sqlalchemy_to_type[T](
     instance: Any,
     info: strawberry.Info,
     target_type: type[T],
-    selected_fields: dict[str, bool | dict],
+    selected_fields: FieldSelectionDict,
 ) -> T | None:
     if instance is None:
         return None
@@ -74,9 +76,8 @@ async def map_sqlalchemy_to_type[T](
             continue
 
         if field_name in insp.mapper.relationships:
-            nested_fields = (
-                selected_fields.get(field_name, {}) if isinstance(selected_fields.get(field_name), dict) else {}
-            )
+            nested_raw = selected_fields.get(field_name, {})
+            nested_fields: FieldSelectionDict = nested_raw if isinstance(nested_raw, dict) else {}
 
             if isinstance(value, list):
                 if value:
@@ -163,23 +164,24 @@ def get_graphql_type_from_sqlalchemy(info: strawberry.Info, instance: Any) -> ty
     for name in possible_names:
         type_obj = info.schema.get_type_by_name(name)
         if type_obj is not None and hasattr(type_obj, "origin"):
-            return type_obj.origin
+            return cast("type[Any]", type_obj.origin)
 
     return None
 
 
-def extract_fields_at_path(selected_fields: dict, path: str) -> dict:
+def extract_fields_at_path(selected_fields: FieldSelectionDict, path: str) -> FieldSelectionDict:
     from strawberry_alchemy.optimizer.selection import extract_at_path
 
     if not path:
         return selected_fields
 
-    return extract_at_path(selected_fields, path)
+    return cast("FieldSelectionDict", extract_at_path(selected_fields, path))
 
 
-def extract_nested_fields(selected_fields: dict[str, bool | dict], field_path: str) -> dict[str, bool | dict]:
-    if field_path in selected_fields and isinstance(selected_fields[field_path], dict):
-        return selected_fields[field_path]
+def extract_nested_fields(selected_fields: FieldSelectionDict, field_path: str) -> FieldSelectionDict:
+    nested = selected_fields.get(field_path)
+    if isinstance(nested, dict):
+        return nested
     return {}
 
 
@@ -187,7 +189,7 @@ async def map_sqlalchemy_to_type_with_path[T](
     instance: Any,
     info: strawberry.Info,
     target_type: type[T],
-    selected_fields: dict[str, bool | dict],
+    selected_fields: FieldSelectionDict,
     field_path: str = "",
 ) -> T | None:
     if instance is None:
@@ -201,7 +203,7 @@ async def map_sqlalchemy_list_to_types[T](
     instances: list[Any],
     info: strawberry.Info,
     target_type: type[T],
-    selected_fields: dict[str, bool | dict],
+    selected_fields: FieldSelectionDict,
 ) -> list[T]:
     if not instances:
         return []

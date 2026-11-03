@@ -1,9 +1,14 @@
-from typing import Any
+from typing import Any, Protocol, cast
 
 import strawberry
 from pydantic import BaseModel, ConfigDict, model_validator
 from sqlalchemy import inspect
 from sqlalchemy.orm.state import InstanceState
+
+
+class _FromSchema(Protocol):
+    @classmethod
+    def from_schema(cls, schema: Any, **kwargs: Any) -> Any: ...
 
 
 class BaseSchema(BaseModel):
@@ -35,5 +40,5 @@ class BaseSchema(BaseModel):
 
     def to_type[T](self, target_cls: type[T], **kwargs: Any) -> T:
         if hasattr(target_cls, "from_schema"):
-            return target_cls.from_schema(self, **kwargs)
+            return cast("T", cast("_FromSchema", target_cls).from_schema(self, **kwargs))
         return target_cls(**self.model_dump(exclude_unset=True), **kwargs)

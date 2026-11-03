@@ -1,9 +1,12 @@
+from collections.abc import Callable
+from typing import Any, ClassVar
+
 from sqlalchemy import String, and_
 from sqlalchemy.sql import operators
 
 
 class FilterOperators:
-    LOOKUP_OPERATORS = {
+    LOOKUP_OPERATORS: ClassVar[dict[str, Callable[..., Any]]] = {
         "exact": operators.eq,
         "iexact": lambda c, v: c.ilike(v) if isinstance(c.type, String) else c == v,
         "contains": lambda c, v: c.contains(v) if isinstance(c.type, String) else c == v,

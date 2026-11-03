@@ -82,15 +82,15 @@ class BaseNodeType(Node):
     created_at: datetime | None = strawberry.UNSET
     updated_at: datetime | None = strawberry.UNSET
 
-    access_filter: ClassVar[type[AccessControlFilter]]   # required on subclasses
+    access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]  # required
     model_class: ClassVar[type[Any]]                     # derived from access_filter
 
     @classmethod
     def from_schema(cls, schema, **kwargs) -> Self              # schema -> type
     @classmethod
-    async def resolve_node(cls, node_id: str, *, info: Info) -> Self | None
+    async def resolve_node(cls, node_id: str, *, info: Info, access_filter=None) -> Self | None
     @classmethod
-    async def resolve_nodes(cls, info: Info, node_ids: Iterable[str], **kwargs) -> list[Self | None]
+    async def resolve_nodes(cls, info: Info, node_ids: Iterable[str], access_filter=None, **kwargs) -> list[Self | None]
     @classmethod
     async def resolve_list(cls, info: Info, filters=strawberry.UNSET, **kwargs) -> ListResult[Self]
     @classmethod
@@ -98,7 +98,8 @@ class BaseNodeType(Node):
 ```
 
 `resolve_list` / `resolve_connection` accept `limit`, `offset`, `filters`, `order`,
-and any `QueryOptimizer.optimize_query` keyword arguments.
+`access_filter` (optional per-call override of the ClassVar), and any
+`QueryOptimizer.optimize_query` keyword arguments.
 
 ### `ListResult[T]`
 
@@ -148,8 +149,8 @@ class SliceMetadata:
 class QueryOptimizer:
     def __init__(self, info: Info, session: AsyncSession, *, analyzer: QueryAnalyzer | None = None)
 
-    def register_access_filter(self, model_class: type, filter_class: type) -> None
-    def register_access_filter_by_name(self, model_name: str, filter_class: type) -> None
+    def register_access_filter(self, model_class: type, filter_class: type[AccessControlFilter] | AccessControlFilter) -> None
+    def register_access_filter_by_name(self, model_name: str, filter_class: type[AccessControlFilter] | AccessControlFilter) -> None
     def get_access_filter(self, model: type) -> Any | None
     async def apply_access_control(self, query, model) -> Any
     async def optimize_query(self, model, *, node_ids=None, filters=None,
@@ -251,17 +252,18 @@ def get_prefetch_map(strawberry_type: type) -> dict[str, list[OptimizerHint]]
 class QueryAnalyzer:
     def __init__(self, *, log_sql: bool = True, log_level: int = logging.INFO)
     def begin(self, model) / end(self) / reset(self)
+    # end() stamps wall-clock end time used by report().total_duration_ms
     def record_selected_fields / record_deferred / record_relationship /
-         record_load_strategy / record_annotation / record_query /
-         record_result / add_warning
+         record_load_strategy / record_annotation /
+         record_query(..., duration_ms=0.0) / record_result / add_warning
     def report(self) -> QueryReport
     def log_report(self) -> QueryReport
 ```
 
-`QueryReport` fields: `model_name`, `total_duration_ms`, `query_count`, `queries`,
-`requested_fields`, `deferred_fields`, `relationships_loaded`, `annotations`,
-`load_strategies`, `warnings`, `result_count`, `total_count`; plus `summary()` and
-`as_dict()`.
+`QueryReport` fields: `model_name`, `total_duration_ms`, `query_count`, `queries`
+(each `QueryEvent` has `duration_ms` / `row_count`), `requested_fields`,
+`deferred_fields`, `relationships_loaded`, `annotations`, `load_strategies`,
+`warnings`, `result_count`, `total_count`; plus `summary()` and `as_dict()`.
 
 ## Filtering
 

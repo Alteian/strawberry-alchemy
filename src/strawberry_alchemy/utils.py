@@ -1,5 +1,6 @@
 import re
 from functools import lru_cache
+from typing import Any
 
 _CAMEL_RE1 = re.compile(r"(.)([A-Z][a-z]+)")
 _CAMEL_RE2 = re.compile(r"([a-z0-9])([A-Z])")
@@ -10,7 +11,7 @@ def _camel_str_to_snake(name: str) -> str:
     return _CAMEL_RE2.sub(r"\1_\2", _CAMEL_RE1.sub(r"\1_\2", name)).lower()
 
 
-def camel_to_snake(data: str | dict) -> str | dict:
+def camel_to_snake(data: str | dict[str, Any]) -> str | dict[str, Any]:
     if isinstance(data, str):
         return _camel_str_to_snake(data)
     if isinstance(data, dict):

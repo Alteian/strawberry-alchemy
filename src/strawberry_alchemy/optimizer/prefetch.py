@@ -216,8 +216,8 @@ def optimize_field(
     | AnnotateCustom
     | AnnotateAncestry,
     **kwargs: list[str] | dict[str, Any],
-) -> Callable:
-    def decorator(func: Callable) -> Callable:
+) -> Callable[..., Any]:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         hints: list[OptimizerHint] = []
         for arg in args:
             if isinstance(arg, str):

@@ -1,20 +1,22 @@
 import logging
 import os
-from collections.abc import Iterable
+import time
+from collections.abc import Hashable, Iterable
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import and_, literal, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import RelationshipProperty, defer, selectinload
+from sqlalchemy.orm import Mapper, RelationshipProperty, defer, selectinload
 from sqlalchemy.sql import func, select
 from strawberry import UNSET
 from strawberry.types import Info
 from strawberry.types.nodes import FragmentSpread, InlineFragment
 
 from strawberry_alchemy.enums import Ordering
+from strawberry_alchemy.filtering.access_control import AccessControlFilter
 from strawberry_alchemy.filtering.filter_builder import FilterBuilder
 from strawberry_alchemy.utils import camel_to_snake
 
@@ -32,6 +34,9 @@ from .prefetch import (
     normalize_dependency_fields,
 )
 from .query_analyzer import QueryAnalyzer
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm.util import AliasedClass
 
 logger = logging.getLogger("query_optimizer")
 
@@ -51,9 +56,10 @@ def _create_analyzer() -> QueryAnalyzer:
 
 
 @lru_cache(maxsize=512)
-def _cached_model_attributes(model: type) -> dict[str, Any]:
-    mapper = inspect(model)
-    return {column.key: getattr(model, column.key) for column in mapper.columns}
+def _cached_model_attributes(model: Hashable) -> dict[str, Any]:
+    model_cls = cast("type[Any]", model)
+    mapper = cast("Mapper[Any]", inspect(model_cls))
+    return {column.key: getattr(model_cls, column.key) for column in mapper.columns}
 
 
 class QueryOptimizer:
@@ -66,7 +72,8 @@ class QueryOptimizer:
     ) -> None:
         self.info = info
         self.session = session
-        self.access_filters: dict[type, type] = {}
+        self.access_filters: dict[type[Any], type[AccessControlFilter] | AccessControlFilter] = {}
+        self.analyzer: QueryAnalyzer | None
 
         if analyzer is not None:
             self.analyzer = analyzer
@@ -93,12 +100,16 @@ class QueryOptimizer:
                 return value
         return None
 
-    def register_access_filter(self, model_class: type, filter_class: type) -> None:
+    def register_access_filter(
+        self, model_class: type[Any], filter_class: type[AccessControlFilter] | AccessControlFilter
+    ) -> None:
         self.access_filters[model_class] = filter_class
 
-    def register_access_filter_by_name(self, model_name: str, filter_class: type) -> None:
+    def register_access_filter_by_name(
+        self, model_name: str, filter_class: type[AccessControlFilter] | AccessControlFilter
+    ) -> None:
         if not hasattr(self, "_filters_by_name"):
-            self._filters_by_name: dict[str, type] = {}
+            self._filters_by_name: dict[str, type[AccessControlFilter] | AccessControlFilter] = {}
         self._filters_by_name[model_name] = filter_class
 
     def get_access_filter(self, model: type[Any]) -> Any | None:
@@ -121,7 +132,7 @@ class QueryOptimizer:
         normalized = camel_to_snake(field_name)
         return normalized if isinstance(normalized, str) else field_name
 
-    def extract_model_fields(self, selected_fields: dict, level: int = 0) -> dict:
+    def extract_model_fields(self, selected_fields: dict[str, Any], level: int = 0) -> dict[str, Any]:
         from strawberry_alchemy.optimizer.selection import (
             FieldSelection,
             RelayConnectionSelection,
@@ -166,7 +177,7 @@ class QueryOptimizer:
 
         return model_fields
 
-    def process_selected_fields(self, selected_fields: list) -> dict:
+    def process_selected_fields(self, selected_fields: list[Any]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for f in selected_fields:
             if isinstance(f, FragmentSpread | InlineFragment):
@@ -208,14 +219,14 @@ class QueryOptimizer:
 
     @staticmethod
     def get_all_model_attributes(model: type[Any]) -> dict[str, Any]:
-        return _cached_model_attributes(model)
+        return _cached_model_attributes(cast("Hashable", model))
 
     @staticmethod
-    def get_ordering_attributes(model: type[Any]) -> list:
+    def get_ordering_attributes(model: type[Any]) -> list[Any]:
         ordering_candidates = ["created_at", "updated_at", "id"]
         return [getattr(model, attr) for attr in ordering_candidates if hasattr(model, attr)]
 
-    def process_order(self, model: type[Any], order_input: Any) -> tuple[list, dict]:
+    def process_order(self, model: type[Any], order_input: Any) -> tuple[list[Any], dict[str, Any]]:
         if order_input is None or order_input is UNSET:
             return [], {}
 
@@ -249,7 +260,7 @@ class QueryOptimizer:
 
         return order_clauses, relationship_configs
 
-    def collect_requested_fields(self, selected_fields: dict[str, Any], model: type[Any]) -> set:
+    def collect_requested_fields(self, selected_fields: dict[str, Any], model: type[Any]) -> set[Any]:
         requested_scalar_attributes: set[Any] = set()
         all_model_attributes = self.get_all_model_attributes(model)
 
@@ -270,7 +281,7 @@ class QueryOptimizer:
 
     def collect_requested_fields_recursive(
         self, selected_fields: dict[str, Any], model: type[Any], path: str = ""
-    ) -> dict:
+    ) -> dict[str, Any]:
         result: dict[str, Any] = {"scalar_fields": set(), "relationships": {}}
         all_model_attributes = self.get_all_model_attributes(model)
         current_path = f"{path}.{model.__name__}" if path else model.__name__
@@ -299,7 +310,7 @@ class QueryOptimizer:
 
         return result
 
-    def get_deferred_attributes(self, selected_fields: dict[str, Any], model: type[Any]) -> list:
+    def get_deferred_attributes(self, selected_fields: dict[str, Any], model: type[Any]) -> list[Any]:
         requested_attributes = self.collect_requested_fields(selected_fields, model)
         all_attributes = self.get_all_model_attributes(model)
         return [
@@ -609,18 +620,17 @@ class QueryOptimizer:
         for name in possible_names:
             type_obj = self.info.schema.get_type_by_name(name)
             if type_obj is not None and hasattr(type_obj, "origin"):
-                origin: type[Any] = type_obj.origin
-                return origin
+                return cast("type[Any]", type_obj.origin)
         return None
 
     async def build_query_with_selected_fields(
         self,
         model: type[Any],
         selected_fields: dict[str, Any],
-        relationship_configs: dict | None = None,
+        relationship_configs: dict[str, Any] | None = None,
         skip_relationships: set[str] | None = None,
         strawberry_type: type | None = None,
-    ) -> list:
+    ) -> list[Any]:
         load_options: list[Any] = []
         all_attributes = self.get_all_model_attributes(model)
         requested_attrs = self.collect_requested_fields(selected_fields, model)
@@ -792,6 +802,7 @@ class QueryOptimizer:
         if node_ids is not None:
             import uuid as _uuid
 
+            ids: list[Any]
             try:
                 ids = [_uuid.UUID(nid) for nid in node_ids]
             except (ValueError, AttributeError):
@@ -820,7 +831,7 @@ class QueryOptimizer:
 
                     if path in builder._join_paths:
                         join_chain = builder._join_paths[path]
-                        current_model = model
+                        current_model: type[Any] | AliasedClass[Any] = model
                         current_path = ""
                         for i, (rel_name, _rel_model) in enumerate(join_chain):
                             current_path = f"{current_path}.{rel_name}" if current_path else rel_name
@@ -848,20 +859,30 @@ class QueryOptimizer:
         total_count = 0
         if return_total_count:
             count_query = select(func.count()).select_from(query.subquery())
-
+            count_sql = "<compilation failed>"
             if self.analyzer:
                 try:
-                    compiled_sql = str(
+                    bind = self.session.bind
+                    if bind is None:
+                        raise RuntimeError("session has no bind")
+                    count_sql = str(
                         count_query.compile(
-                            dialect=self.session.bind.dialect,
+                            dialect=bind.dialect,
                             compile_kwargs={"literal_binds": True},
                         )
                     )
-                    self.analyzer.record_query("count", compiled_sql)
                 except Exception:
-                    self.analyzer.record_query("count", "<compilation failed>")
+                    count_sql = "<compilation failed>"
 
+            count_started = time.perf_counter()
             total_count = await self.session.scalar(count_query) or 0
+            if self.analyzer:
+                self.analyzer.record_query(
+                    "count",
+                    count_sql,
+                    row_count=1,
+                    duration_ms=(time.perf_counter() - count_started) * 1000,
+                )
 
         query = query.options(*load_options)
 
@@ -880,19 +901,24 @@ class QueryOptimizer:
         if offset is not None:
             query = query.offset(offset)
 
+        data_sql = "<compilation failed>"
         if self.analyzer:
             try:
-                compiled_sql = str(
+                bind = self.session.bind
+                if bind is None:
+                    raise RuntimeError("session has no bind")
+                data_sql = str(
                     query.compile(
-                        dialect=self.session.bind.dialect,
+                        dialect=bind.dialect,
                         compile_kwargs={"literal_binds": True},
                     )
                 )
-                self.analyzer.record_query("data", compiled_sql)
             except Exception:
-                self.analyzer.record_query("data", "<compilation failed>")
+                data_sql = "<compilation failed>"
 
+        data_started = time.perf_counter()
         result_proxy = await self.session.execute(query)
+        data_duration_ms = (time.perf_counter() - data_started) * 1000
 
         if annotation_configs:
             rows = result_proxy.unique().all()
@@ -917,6 +943,12 @@ class QueryOptimizer:
             result = list(result_proxy.unique().scalars().all())
 
         if self.analyzer:
+            self.analyzer.record_query(
+                "data",
+                data_sql,
+                row_count=len(result),
+                duration_ms=data_duration_ms,
+            )
             self.analyzer.record_result(
                 count=len(result),
                 total_count=total_count if return_total_count else None,

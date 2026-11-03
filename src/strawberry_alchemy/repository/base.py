@@ -17,7 +17,7 @@ from .deletion import BaseDeletionHandler
 class BaseRepository[
     ModelT,
     SchemaT: BaseSchema = BaseSchema,
-    DeletionHandlerT: BaseDeletionHandler = BaseDeletionHandler,
+    DeletionHandlerT: BaseDeletionHandler[Any] = BaseDeletionHandler,  # type: ignore[type-arg]
 ]:
     model_cls: ClassVar[type[Any]]
     schema_cls: ClassVar[type[BaseSchema]]
@@ -39,8 +39,9 @@ class BaseRepository[
                 "(pass to the constructor or declare as ClassVars on the subclass)."
             )
         self.session = session
-        self.model_cls = cast("type[ModelT]", resolved_model)
-        self.schema_cls = cast("type[SchemaT]", resolved_schema)
+        # Bypass ClassVar-via-instance restriction while preserving runtime attribute access.
+        object.__setattr__(self, "model_cls", cast("type[ModelT]", resolved_model))
+        object.__setattr__(self, "schema_cls", cast("type[SchemaT]", resolved_schema))
         self.deletion_handler = deletion_handler
 
     @property
@@ -57,7 +58,7 @@ class BaseRepository[
         if db_obj is None:
             raise NotFoundError(f"{self.model_cls.__name__}: {id}")
 
-        return self.schema_cls.model_validate(db_obj)
+        return cast("SchemaT", self.schema_cls.model_validate(db_obj))
 
     async def get_by_ids(
         self,
@@ -70,7 +71,7 @@ class BaseRepository[
 
         result = await self.session.execute(stmt)
         db_objs = result.scalars().all()
-        return [self.schema_cls.model_validate(obj) for obj in db_objs]
+        return [cast("SchemaT", self.schema_cls.model_validate(obj)) for obj in db_objs]
 
     async def _process_relations(self, db_obj: ModelT, schema: SchemaT, is_persistent: bool = False) -> None:
         for rel_name, rel_model in self.relation_models.items():
@@ -128,7 +129,7 @@ class BaseRepository[
             self.session.add(db_obj)
             await self.session.flush()
 
-            result = self.schema_cls.model_validate(db_obj)
+            result = cast("SchemaT", self.schema_cls.model_validate(db_obj))
             if should_commit:
                 await self.session.commit()
             return result
@@ -160,7 +161,7 @@ class BaseRepository[
 
             await self._process_relations(db_obj, schema, is_persistent=True)
 
-            result = self.schema_cls.model_validate(db_obj)
+            result = cast("SchemaT", self.schema_cls.model_validate(db_obj))
             if should_commit:
                 await self.session.commit()
             return result
@@ -228,7 +229,7 @@ class BaseRepository[
             new_items = [item for item in related_items if item.id not in existing_ids]
             collection.extend(new_items)
 
-        result = self.schema_cls.model_validate(parent_obj)
+        result = cast("SchemaT", self.schema_cls.model_validate(parent_obj))
         if should_commit:
             await self.session.commit()
         return result
@@ -258,7 +259,7 @@ class BaseRepository[
         target_ids = set(related_ids)
         setattr(parent_obj, relation_name, [item for item in collection if item.id not in target_ids])
 
-        result = self.schema_cls.model_validate(parent_obj)
+        result = cast("SchemaT", self.schema_cls.model_validate(parent_obj))
         if should_commit:
             await self.session.commit()
         return result

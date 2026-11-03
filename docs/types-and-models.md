@@ -73,7 +73,9 @@ class PostType(BaseNodeType):
   `ClassVar` pointing at an `AccessControlFilter` **subclass** (preferred).
   Instances still work for backwards compatibility because `apply_filter` is a
   staticmethod. `model_class` is derived from `access_filter.model_class`
-  automatically; you can also declare `model_class` explicitly.
+  automatically; you can also declare `model_class` explicitly. Pass
+  `access_filter=` to `resolve_node` / `resolve_nodes` / `resolve_list` /
+  `resolve_connection` to override the ClassVar for a single call.
 - **Scalar fields default to `strawberry.UNSET`.** This lets the optimizer defer
   columns the client did not request and lets `from_schema` distinguish
   "not provided" from `None`. Fields that are nullable (`| None`) or temporal

@@ -200,8 +200,10 @@ merged = merge_dependency_trees({"id": True}, {"user": {"name": True}})
 ## `QueryAnalyzer` — see what the optimizer did
 
 Set the environment variable `QUERY_ANALYZER_ENABLED` to any value to log a report
-per optimized query: compiled SQL (data + count), duration, requested/deferred
-fields, loaded relationships, load strategies, and annotation kinds.
+per optimized query: compiled SQL (data + count), per-statement and total duration,
+requested/deferred fields, loaded relationships, load strategies, and annotation kinds.
+`end()` stamps the wall-clock finish used for `total_duration_ms`; each recorded
+query carries its own `duration_ms` from the optimizer's execute timing.
 
 ```bash
 QUERY_ANALYZER_ENABLED=1 uvicorn main:app

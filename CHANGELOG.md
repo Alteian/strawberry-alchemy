@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-11-03
+
+### Added
+
+- Per-call `access_filter` override on `resolve_node` / `resolve_nodes` /
+  `resolve_list` / `resolve_connection` (class or instance).
+- `QueryAnalyzer.end()` stamps wall-clock duration; `record_query` accepts
+  `duration_ms`, and the optimizer records per-statement execute timing.
+
+### Fixed
+
+- Cleared remaining mypy `strict` debt across the public package surface.
+
+### Changed
+
+- CI `typecheck` is now a hard gate; `build` requires lint, typecheck, and test.
+
+### Tests
+
+- `resolve_*` ClassVar ACL vs per-call override, including `totalCount`.
+
 ## [0.2.2] — 2026-11-02
 
 ### Fixed

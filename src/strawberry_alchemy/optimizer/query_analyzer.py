@@ -95,6 +95,7 @@ class QueryAnalyzer:
 
         self._model_name: str = ""
         self._start_time: float = 0.0
+        self._end_time: float | None = None
 
         self._queries: list[QueryEvent] = []
         self._load_strategies: list[LoadStrategyEvent] = []
@@ -111,6 +112,7 @@ class QueryAnalyzer:
     def begin(self, model: type) -> None:
         self._model_name = model.__name__
         self._start_time = time.perf_counter()
+        self._end_time = None
 
     def record_selected_fields(self, fields: dict[str, Any], model: type) -> None:
         self._requested_fields = list(fields.keys())
@@ -129,12 +131,20 @@ class QueryAnalyzer:
     def record_annotation(self, name: str, kind: str) -> None:
         self._annotations.append(f"{kind}({name})")
 
-    def record_query(self, label: str, sql: str, params: dict | None = None, row_count: int = 0) -> None:
+    def record_query(
+        self,
+        label: str,
+        sql: str,
+        params: dict[str, Any] | None = None,
+        row_count: int = 0,
+        duration_ms: float = 0.0,
+    ) -> None:
         self._queries.append(
             QueryEvent(
                 label=label,
                 sql=sql if self.log_sql else "<sql logging disabled>",
                 params=params if self.log_sql else None,
+                duration_ms=duration_ms,
                 row_count=row_count,
             )
         )
@@ -146,10 +156,17 @@ class QueryAnalyzer:
     def add_warning(self, message: str) -> None:
         self._warnings.append(message)
 
-    def end(self) -> None: ...
+    def end(self) -> None:
+        """Stamp wall-clock end time used by ``report()`` for ``total_duration_ms``."""
+        if self._start_time and self._end_time is None:
+            self._end_time = time.perf_counter()
 
     def report(self) -> QueryReport:
-        elapsed = (time.perf_counter() - self._start_time) * 1000 if self._start_time else 0.0
+        if self._start_time:
+            end = self._end_time if self._end_time is not None else time.perf_counter()
+            elapsed = (end - self._start_time) * 1000
+        else:
+            elapsed = 0.0
 
         return QueryReport(
             model_name=self._model_name,
@@ -187,6 +204,7 @@ class QueryAnalyzer:
     def reset(self) -> None:
         self._model_name = ""
         self._start_time = 0.0
+        self._end_time = None
         self._queries.clear()
         self._load_strategies.clear()
         self._requested_fields.clear()

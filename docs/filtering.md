@@ -204,6 +204,17 @@ optimizer.register_access_filter(Post, PostAccessFilter)
 optimizer.register_access_filter_by_name("Post", PostAccessFilter)
 ```
 
+Override the ClassVar filter for a single resolve call when a field needs a
+different visibility rule (class or instance):
+
+```python
+@strawberry.field
+async def all_posts(self, info: Info) -> ListResult[PostType]:
+    return await PostType.resolve_list(info, access_filter=AdminPostAccessFilter)
+
+# Also accepted on resolve_node / resolve_nodes / resolve_connection.
+```
+
 Production patterns seen in real apps:
 
 - **Admin-only**: `return query.where(False)` unless the user has an admin role.

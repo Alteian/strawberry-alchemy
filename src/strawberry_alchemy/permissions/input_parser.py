@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from strawberry.relay import from_base64
@@ -23,7 +23,7 @@ def _decode_global_id(raw: Any) -> UUID | str | None:
         except Exception:
             # Includes ValueError/TypeError and Strawberry InvalidGlobalIDError.
             return raw
-    return raw
+    return cast("UUID | str | None", raw)
 
 
 def extract_global_ids_from_info(

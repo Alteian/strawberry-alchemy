@@ -31,8 +31,6 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Non-blocking until mypy debt is cleared in 0.2.0 (see docs/roadmap.md).
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v7
@@ -69,7 +67,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, typecheck, test]
 
     steps:
       - uses: actions/checkout@v7

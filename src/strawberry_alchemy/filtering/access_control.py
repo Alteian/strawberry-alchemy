@@ -3,7 +3,7 @@ from typing import Any
 
 class AccessControlMeta(type):
     def __init__(
-        cls: "type[AccessControlFilter]",
+        cls,
         name: str,
         bases: tuple[type, ...],
         dct: dict[str, Any],
@@ -11,7 +11,7 @@ class AccessControlMeta(type):
         # NOTE: We can remove this in the future and come up with better solution. This is opinionated convention.
         if name != "AccessControlFilter" and not name.endswith("AccessFilter"):
             raise TypeError(f"Subclass {name} must end with 'AccessFilter'")
-        super().__init__(name, bases, dct)  # type: ignore
+        super().__init__(name, bases, dct)
 
 
 class AccessControlFilter(metaclass=AccessControlMeta):
