@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.13", "3.14"]
+        # Exact patches must match mise.toml / mise.lock for --locked installs.
+        python-version: ["3.13.18", "3.14.8"]
     env:
       MISE_PYTHON_VERSION: ${{ matrix.python-version }}
     steps:
