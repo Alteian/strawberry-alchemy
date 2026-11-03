@@ -31,12 +31,19 @@ class Doc(_PgBase):
 
 @pytest.fixture
 async def docs_table(pg_engine: AsyncEngine) -> None:
+    ddl = """
+    DROP TABLE IF EXISTS sa_pg_docs;
+    CREATE TABLE sa_pg_docs (
+        id UUID PRIMARY KEY,
+        title JSONB NOT NULL DEFAULT '{}'::jsonb,
+        owner_id VARCHAR(64) NOT NULL
+    );
+    """
     async with pg_engine.begin() as conn:
-        await conn.run_sync(_PgBase.metadata.drop_all)
-        await conn.run_sync(_PgBase.metadata.create_all)
+        await asyncio.wait_for(conn.execute(text(ddl)), timeout=15)
     yield
     async with pg_engine.begin() as conn:
-        await conn.run_sync(_PgBase.metadata.drop_all)
+        await asyncio.wait_for(conn.execute(text("DROP TABLE IF EXISTS sa_pg_docs")), timeout=15)
 
 
 @pytest.mark.asyncio
@@ -58,21 +65,16 @@ async def test_jsonb_key_filter_executes(pg_session: AsyncSession, docs_table: N
             Doc(id=uuid4(), title={"cs": "Dům", "en": "House"}, owner_id="b"),
         ]
     )
-    await pg_session.commit()
+    await asyncio.wait_for(pg_session.commit(), timeout=15)
 
-    # Flattened key path (title__cs) — same shape FilterBuilder emits from GraphQL inputs.
     builder = FilterBuilder()
     expr = await asyncio.wait_for(
         builder.build_field_filter(Doc, "title__cs", StringFilter(icontains="byt")),
         timeout=15,
     )
     assert expr is not None
-    rows = (
-        await asyncio.wait_for(
-            pg_session.execute(select(Doc).where(expr)),
-            timeout=15,
-        )
-    ).scalars().all()
+    result = await asyncio.wait_for(pg_session.execute(select(Doc).where(expr)), timeout=15)
+    rows = result.scalars().all()
     assert len(rows) == 1
     assert rows[0].title["cs"] == "Prodej bytu"
 
