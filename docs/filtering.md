@@ -12,7 +12,7 @@ operator inputs, plus `AND` / `OR` lists for nesting.
 | `StringFilter` | `exact`, `iexact`, `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith`, `in`, `not_in`, `isnull` |
 | `IntFilter` | `exact`, `gt`, `ge`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` (2-element list) |
 | `BooleanFilter` | `exact`, `isnull` |
-| `DateTimeFilter` | `exact`, `ge`, `gt`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` — accepts ISO-8601 strings, parsed via `dateutil` |
+| `DateTimeFilter` | `exact`, `ge`, `gt`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` — accepts ISO-8601 strings via `datetime.fromisoformat` |
 | `EnumFilter[T]` | `exact`, `in`, `not_in`, `isnull` — generic over a Strawberry enum |
 
 ## Declaring a filter input

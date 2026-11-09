@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, cast
 
-import dateutil.parser
 import strawberry
 from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, and_, or_
 from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
@@ -84,7 +84,11 @@ class FilterBuilder:
             field_type = field.type
 
             if isinstance(field_type, DateTime):
-                return dateutil.parser.parse(str(value))
+                if isinstance(value, datetime):
+                    return value
+                if isinstance(value, date):
+                    return datetime.combine(value, datetime.min.time())
+                return datetime.fromisoformat(str(value))
             elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
                 return [await self.parse_filter_value(v, field) for v in value]
             parse_func = SQL_ALCHEMY_TYPE_MAPPING.get(type(field_type))

@@ -1,6 +1,6 @@
 [project]
 name = "strawberry-alchemy"
-version = "0.5.0"
+version = "0.5.1"
 description = "Toolkit for fast and easy strawberry+sqlalchemy apis"
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,6 @@ dependencies = [
     "strawberry-graphql>=0.339.1",
     "sqlalchemy[asyncio]>=2.1.6",
     "pydantic>=2.14.2",
-    "python-dateutil>=4.0",
 ]
 
 [project.urls]
@@ -45,7 +44,6 @@ dev = [
     "mypy>=2.4.1",
     "aiosqlite>=0.22",
     "pre-commit>=4.7",
-    "types-python-dateutil>=2.9",
     "asyncpg>=0.32.0",
     "psycopg[binary]>=3.3.7",
     "mkdocs-material>=9.6",

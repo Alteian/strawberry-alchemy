@@ -26,7 +26,6 @@ row-level security, permissions, and output mapping.
 - `strawberry-graphql >= 0.339.1`
 - `sqlalchemy[asyncio] >= 2.1.6`
 - `pydantic >= 2.14`
-- `python-dateutil >= 4.0`
 
 ## Installation
 

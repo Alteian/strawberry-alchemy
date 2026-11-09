@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-09
+
+### Changed
+
+- Dropped the `python-dateutil` dependency. `DateTimeFilter` values are parsed with
+  stdlib `datetime.fromisoformat` (Python `>= 3.13`). This removes the conflict with
+  packages that still require `python-dateutil<3` (e.g. `hatchet-sdk`), so consumers
+  no longer need a uv `override-dependencies` pin for dateutil 4.x.
+
 ## [0.5.0] — 2026-11-03
 
 ### Added
