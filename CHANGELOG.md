@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-11-12
+
+### Fixed
+
+- **`from_schema` / `to_type` convert nested schemas.** Nested Pydantic/`BaseSchema`
+  values (and lists of them) on GraphQL object fields become the related Strawberry
+  types, including `Annotated` / `strawberry.lazy` field types. Explicit kwargs still
+  win, `exclude=` skips fields, JSON/`dict` scalars are left alone, and cyclic
+  back-references resolve to `None` instead of recursing forever.
+
 ## [0.5.1] — 2026-11-09
 
 ### Changed

@@ -106,9 +106,15 @@ gql_type = PostType.from_schema(schema, exclude={"body"})     # skip fields
 ```
 
 Under the hood it dumps the schema with `exclude_unset=True`, keeps only attributes
-matching the type's `__init__` parameters, applies your kwargs, coerces `UNSET` →
-`None` for nullable/temporal fields, and constructs the instance. This is also what
-`BaseSchema.to_type()` calls.
+matching the type's `__init__` parameters, applies your kwargs, converts nested
+Pydantic/`BaseSchema` values (and lists of them) into the related Strawberry types
+when the GraphQL field is a Strawberry object — including fields wrapped in
+`T | None`, `list[...]`, `Annotated`, and `strawberry.lazy` — coerces `UNSET` →
+`None` for nullable/temporal fields, and constructs the instance. Explicit kwargs
+still win; `exclude=` omits those fields. JSON/`dict` scalar fields are left alone.
+If both sides of a loaded relation form a cycle, the cyclic back-reference becomes
+`None` so conversion cannot recurse forever. This is also what `BaseSchema.to_type()`
+calls.
 
 ### Direct construction
 

@@ -10,6 +10,7 @@ from strawberry.types import Info
 from strawberry_alchemy.filtering.access_control import AccessControlFilter
 from strawberry_alchemy.mapping import map_sqlalchemy_list_to_types
 from strawberry_alchemy.mapping.output_normalization import (
+    convert_nested_schema_fields,
     enrich_mapping_from_schema,
     get_type_init_params,
     normalize_unset_scalars_on_instance,
@@ -53,10 +54,21 @@ class BaseNodeType(Node):
         init_params = get_type_init_params(cls)
 
         exclude = kwargs.pop("exclude", None)
+        seen: set[int] = set(kwargs.pop("_nested_conversion_seen", None) or ())
+        skip_keys = set(kwargs)
+        exclude_set = set(exclude) if exclude else None
+
         schema_data = schema.model_dump(exclude_unset=True, exclude=exclude)
         mapped_data = {k: v for k, v in schema_data.items() if k in init_params}
         mapped_data.update(kwargs)
-        enrich_mapping_from_schema(schema, mapped_data, init_params)
+        enrich_mapping_from_schema(schema, mapped_data, init_params, exclude=exclude_set)
+        convert_nested_schema_fields(
+            cls,
+            mapped_data,
+            source_schema=schema,
+            skip_keys=skip_keys,
+            seen=seen | {id(schema)},
+        )
         mapped_data = prepare_output_constructor_data(
             cls,
             mapped_data,

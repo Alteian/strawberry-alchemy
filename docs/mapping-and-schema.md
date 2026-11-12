@@ -41,6 +41,8 @@ data = schema.dump_for_db(exclude={"id", "created_at"})
 - **`to_type(TargetType, **kwargs)`**: converts the schema into a Strawberry type.
   If the target has `from_schema` (all `BaseNodeType` subclasses do), it is used;
   otherwise the target is constructed from `model_dump(exclude_unset=True)`.
+  Through `from_schema`, nested loaded schemas (and lists of them) become the related
+  Strawberry types — you do not need to convert nested relations by hand.
 
 ```python
 gql_type = created_schema.to_type(PostType)            # == PostType.from_schema(created_schema)
