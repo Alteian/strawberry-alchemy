@@ -49,6 +49,23 @@ gql_type = created_schema.to_type(PostType)            # == PostType.from_schema
 gql_type = created_schema.to_type(PostType, title="Overridden")
 ```
 
+- **`from_input(input, **kwargs)`** / **`schema_from_input(Model, input, **kwargs)`**:
+  the inverse of `to_type` — build a Pydantic/`BaseSchema` instance from a Strawberry
+  `@strawberry.input`. Same-named fields are copied; `relay.GlobalID` values become
+  `uuid.UUID`; `strawberry.UNSET` fields are omitted so model defaults apply; explicit
+  `None` is kept. Kwargs win (and are decoded the same way). Use `schema_from_input`
+  for plain Pydantic models that do not subclass `BaseSchema`.
+
+```python
+from strawberry.relay import GlobalID
+
+from strawberry_alchemy import BaseSchema, schema_from_input
+
+schema = PostSchema.from_input(input)                 # GlobalIDs → UUIDs
+schema = PostSchema.from_input(input, user_id=user.id)
+command = schema_from_input(SomeCommand, input, actor_user_id=user.id)
+```
+
 Sparse schemas work for partial updates: unset fields are excluded from
 `dump_for_db`, so `BaseRepository.update` only touches the fields you provided.
 
@@ -121,13 +138,13 @@ Also exported from `strawberry_alchemy.mapping`:
 
 ## The schema → type flow in mutations
 
-The typical mutation flow chains `BaseSchema` → `BaseRepository` → `to_type`:
+The typical mutation flow chains `from_input` → `BaseRepository` → `to_type`:
 
 ```python
 @strawberry.mutation
 async def create_post(self, info: Info, input: CreatePostInput) -> PostType:
     session = await info.context.get_session()
-    schema = PostSchema(title=input.title, body=input.body, user_id=user.id)
+    schema = PostSchema.from_input(input, user_id=user.id)          # GlobalIDs → UUIDs
     created = await PostRepository(session).create(schema=schema)   # returns PostSchema
     return created.to_type(PostType)                                # PostType.from_schema(created)
 ```

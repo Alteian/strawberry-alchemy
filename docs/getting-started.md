@@ -261,8 +261,6 @@ GraphQL type. `delete` runs the deletion handler hooks when one is passed.
 
 ```python
 # mutations.py
-import uuid
-
 import strawberry
 from strawberry.relay import GlobalID
 from strawberry.types import Info
@@ -297,22 +295,23 @@ class PostMutations:
     async def create_post(self, info: Info, input: CreatePostInput) -> PostType:
         session = await info.context.get_session()
         user = await info.context.identity
-        schema = PostSchema(title=input.title, body=input.body, user_id=user.id)
+        schema = PostSchema.from_input(input, user_id=user.id)
         created = await PostRepository(session).create(schema=schema)
         return created.to_type(PostType)
 
     @strawberry.mutation(permission_classes=[IsAuthenticated])
     async def update_post(self, info: Info, input: UpdatePostInput) -> PostType:
         session = await info.context.get_session()
-        schema = PostSchema(id=uuid.UUID(input.id.node_id), title=input.title, body=input.body)
+        schema = PostSchema.from_input(input)
         result = await PostRepository(session).update(schema=schema)
         return result.to_type(PostType)
 
     @strawberry.mutation(permission_classes=[IsAuthenticated])
     async def delete_post(self, info: Info, input: DeletePostInput) -> bool:
         session = await info.context.get_session()
+        schema = PostSchema.from_input(input)
         await PostRepository(session, deletion_handler=PostDeletionHandler()).delete(
-            id=uuid.UUID(input.id.node_id)
+            id=schema.id
         )
         return True
 

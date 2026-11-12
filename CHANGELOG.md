@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-12
+
+### Added
+
+- **`BaseSchema.from_input` / `schema_from_input`** — build a Pydantic/`BaseSchema`
+  instance from a Strawberry GraphQL input. Same-named fields are copied;
+  `relay.GlobalID` values become `uuid.UUID`; omitted (`UNSET`) fields keep the
+  model defaults; explicit `None` is preserved; kwargs win. Works for plain
+  `BaseModel` targets via `schema_from_input` (command schemas in adapters).
+
 ## [0.5.2] — 2026-11-12
 
 ### Fixed

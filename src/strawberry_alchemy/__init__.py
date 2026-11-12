@@ -70,7 +70,7 @@ from strawberry_alchemy.repository import (
     DeletionPartialFailure,
     DeletionReport,
 )
-from strawberry_alchemy.schema import BaseSchema
+from strawberry_alchemy.schema import BaseSchema, schema_from_input
 from strawberry_alchemy.types import (
     BaseNodeType,
     Edge,
@@ -152,6 +152,7 @@ __all__ = (
     "merge_dependency_trees",
     "normalize_dependency_fields",
     "selection_to_model_fields",
+    "schema_from_input",
     "set_rls_guc",
     "source_path_to_dependency_tree",
 )

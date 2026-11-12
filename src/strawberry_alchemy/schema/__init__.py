@@ -1,3 +1,3 @@
-from .base import BaseSchema
+from .base import BaseSchema, schema_from_input
 
-__all__ = ("BaseSchema",)
+__all__ = ("BaseSchema", "schema_from_input")

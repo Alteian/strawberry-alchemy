@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 import strawberry
 from strawberry.relay import GlobalID
 from strawberry.types import Info
@@ -38,17 +36,15 @@ class PostMutations:
     async def create_post(self, info: Info, input: CreatePostInput) -> PostType:
         session = await info.context.get_session()
         user = await info.context.identity
-        schema = PostSchema(title=input.title, body=input.body, user_id=user.id)
+        schema = PostSchema.from_input(input, user_id=user.id)
         created = await PostRepository(session).create(schema=schema)
         return created.to_type(PostType)
 
     @strawberry.mutation
     async def update_post(self, info: Info, input: UpdatePostInput) -> PostType:
         session = await info.context.get_session()
-        schema = PostSchema(
-            id=uuid.UUID(input.id.node_id),
-            title=input.title,
-            body=input.body,
+        schema = PostSchema.from_input(
+            input,
             user_id=(await info.context.identity).id,
         )
         result = await PostRepository(session).update(schema=schema)
@@ -58,6 +54,7 @@ class PostMutations:
     async def delete_post(self, info: Info, input: DeletePostInput) -> bool:
         session = await info.context.get_session()
         repo = PostRepository(session, deletion_handler=PostDeletionHandler())
+        schema = PostSchema.from_input(input)
         await prepare_mutation_resources(
             info,
             {"post_id": input.id},
@@ -67,7 +64,7 @@ class PostMutations:
                 OwnerPermission(owner_field="user_id", resource_key="post_id"),
             ],
         )
-        report = await repo.delete(id=uuid.UUID(input.id.node_id), strict=False)
+        report = await repo.delete(id=schema.id, strict=False)
         return not report.has_failures
 
 

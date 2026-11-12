@@ -73,6 +73,7 @@ from strawberry_alchemy import (
 
     # schema
     BaseSchema,
+    schema_from_input,     # GraphQL input → Pydantic/BaseSchema (GlobalID → UUID)
 
     # utils
     camel_to_snake,
@@ -391,6 +392,10 @@ class BaseSchema(BaseModel):
     # model_config: from_attributes=True, validate_assignment=True, arbitrary_types_allowed=True
     def dump_for_db(self, exclude: set[str] | None = None, **kwargs) -> dict[str, Any]
     def to_type[T](self, target_cls: type[T], **kwargs) -> T
+    @classmethod
+    def from_input(cls, input, **kwargs) -> Self   # GraphQL input → schema (GlobalID → UUID)
+
+def schema_from_input(model_cls: type[BaseModel], input, **kwargs) -> BaseModel
 ```
 
 ## Mapping

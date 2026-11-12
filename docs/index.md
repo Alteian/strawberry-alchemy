@@ -65,7 +65,7 @@ A complete walkthrough of these pieces working together is in
 - [Postgres RLS](postgres-rls.md) — session GUC helpers for app-owned row-level policies
 - [Filtering](filtering.md) — filter inputs, operators, `AND`/`OR`, custom filters, access-control filters
 - [Repository](repository.md) — CRUD, relation management, deletion handlers
-- [Mapping & schema](mapping-and-schema.md) — `BaseSchema`, `dump_for_db`, `to_type`, mapping helpers
+- [Mapping & schema](mapping-and-schema.md) — `BaseSchema`, `dump_for_db`, `to_type`, `from_input`, mapping helpers
 - [Permissions](permissions.md) — permission classes and resource checks
 - [API reference](api-reference.md) — every public export with signatures
 - [Roadmap](roadmap.md) — planned fixes, hardening, and features
