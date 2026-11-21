@@ -269,7 +269,6 @@ class EmploymentType(BaseNodeType):
 Pass ``foreign_key`` when the same field must also work after a bare
 ``schema.to_type()`` (no selectinload): if the attribute is empty but the FK is
 set, the extension loads via ``resolve_nodes`` with the edge ACL.
-```
 
 For computed fields that prefetch a relationship via `@optimize_field`, pass the
 same override on the hint:
