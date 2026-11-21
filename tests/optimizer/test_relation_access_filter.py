@@ -93,7 +93,12 @@ class EmployeeType(BaseNodeType):
     # Reporting-line edge: same related model, looser ACL via RelationAccessFilter.
     manager: EmployeeType | None = strawberry.field(
         default=strawberry.UNSET,
-        extensions=[RelationAccessFilter(ReportingLineEmployeeAccessFilter)],
+        extensions=[
+            RelationAccessFilter(
+                ReportingLineEmployeeAccessFilter,
+                foreign_key="manager_id",
+            )
+        ],
     )
 
     @strawberry.field
@@ -237,6 +242,50 @@ async def test_sibling_edge_still_uses_classvar_acl(session: AsyncSession) -> No
     assert item["title"] == "emp-a"
     assert item["buddy"] is None
     assert item["manager"] == {"title": "manager-b"}
+
+
+@pytest.mark.asyncio
+async def test_foreign_key_fallback_when_relation_not_mapped(session: AsyncSession) -> None:
+    """Mutation-style to_type path: FK set, relationship attribute None → resolve via FK."""
+    schema = strawberry.Schema(query=Query)
+    context = GraphQLContext(session, identity=_User(OWNER_A))
+
+    # Build a GraphQL instance as to_type would (scalars only, no nested manager).
+    emp = EmployeeType(
+        id=EMP_A_ID,
+        created_at=None,
+        updated_at=None,
+        owner_id=OWNER_A,
+        title="emp-a",
+        manager_id=MANAGER_B_ID,
+        buddy_id=None,
+        manager=None,
+        buddy=None,
+    )
+
+    @strawberry.type
+    class Root:
+        @strawberry.field
+        def employee(self) -> EmployeeType:
+            return emp
+
+    schema = strawberry.Schema(query=Root)
+    result = await schema.execute(
+        """
+        query {
+          employee {
+            title
+            manager { title }
+          }
+        }
+        """,
+        context_value=context,
+    )
+
+    assert result.errors is None
+    assert result.data is not None
+    assert result.data["employee"]["title"] == "emp-a"
+    assert result.data["employee"]["manager"] == {"title": "manager-b"}
 
 
 @pytest.mark.asyncio

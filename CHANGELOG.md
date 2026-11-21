@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-21
+
+### Added
+
+- **`RelationAccessFilter(foreign_key=...)`** — optional FK fallback for mutation
+  `to_type()` paths: when the relationship attribute is missing but the FK is set,
+  load via `resolve_nodes` with the edge ACL (optimizer-prefetched values are
+  returned as-is).
+
 ## [0.7.0] — 2026-11-21
 
 ### Added

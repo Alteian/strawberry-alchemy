@@ -257,8 +257,18 @@ class EmploymentType(BaseNodeType):
     # Reporting-line: same Employment model, looser ACL on this edge only
     manager: EmploymentType | None = strawberry.field(
         default=strawberry.UNSET,
-        extensions=[RelationAccessFilter(ReportingLineEmploymentAccessFilter)],
+        extensions=[
+            RelationAccessFilter(
+                ReportingLineEmploymentAccessFilter,
+                foreign_key="manager_employment_id",  # mutation to_type() fallback
+            )
+        ],
     )
+```
+
+Pass ``foreign_key`` when the same field must also work after a bare
+``schema.to_type()`` (no selectinload): if the attribute is empty but the FK is
+set, the extension loads via ``resolve_nodes`` with the edge ACL.
 ```
 
 For computed fields that prefetch a relationship via `@optimize_field`, pass the
