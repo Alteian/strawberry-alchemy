@@ -50,7 +50,7 @@ from strawberry_alchemy import (
     RelationAccessFilter,  # FieldExtension: per-edge ACL override for nested selectinload
     FilterBuilder,         # Strawberry inputs / dicts -> SQL WHERE
     FilterOperators,       # LOOKUP_OPERATORS registry
-    IDFilter, StringFilter, IntFilter, BooleanFilter, DateTimeFilter, EnumFilter,
+    IDFilter, StringFilter, IntFilter, BooleanFilter, DateFilter, DateTimeFilter, EnumFilter,
     JSONFilter,            # jsonb_contains / has_key / path / … (Postgres JSONB)
 
     # mapping
@@ -315,6 +315,7 @@ All inputs default every field to `strawberry.UNSET`:
   `istartswith`, `endswith`, `iendswith`, `in_`, `not_in_`, `isnull`
 - `IntFilter` — `exact`, `gt`, `ge`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range`
 - `BooleanFilter` — `exact`, `isnull`
+- `DateFilter` — `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range` (calendar dates)
 - `DateTimeFilter` — `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range`
 - `EnumFilter[EnumType]` — `exact`, `in_`, `not_in_`, `isnull`
 - `JSONFilter` — `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`,

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import strawberry
 from strawberry.relay import GlobalID
@@ -45,6 +45,21 @@ class IntFilter:
 class BooleanFilter:
     exact: bool | None = strawberry.UNSET
     isnull: bool | None = strawberry.UNSET
+
+
+@strawberry.input
+class DateFilter:
+    """Operators for SQLAlchemy ``Date`` columns (calendar dates, no time)."""
+
+    exact: date | None = strawberry.UNSET
+    ge: date | None = strawberry.UNSET
+    gt: date | None = strawberry.UNSET
+    lt: date | None = strawberry.UNSET
+    le: date | None = strawberry.UNSET
+    in_: list[date] | None = strawberry.field(default=strawberry.UNSET)
+    not_in_: list[date] | None = strawberry.field(default=strawberry.UNSET)
+    isnull: bool | None = strawberry.UNSET
+    range: list[date] | None = strawberry.UNSET
 
 
 @strawberry.input

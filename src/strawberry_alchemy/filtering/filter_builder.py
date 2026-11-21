@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import strawberry
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, and_, or_
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, Integer, String, and_, or_
 from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.util import AliasedClass
@@ -79,6 +79,9 @@ class FilterBuilder:
             return None
         if isinstance(value, GlobalID):
             return value.node_id.strip()
+        # ``isnull`` (and any other bool operator) must not be coerced to the column type.
+        if isinstance(value, bool):
+            return value
 
         try:
             field_type = field.type
@@ -89,6 +92,12 @@ class FilterBuilder:
                 if isinstance(value, date):
                     return datetime.combine(value, datetime.min.time())
                 return datetime.fromisoformat(str(value))
+            if isinstance(field_type, Date):
+                if isinstance(value, datetime):
+                    return value.date()
+                if isinstance(value, date):
+                    return value
+                return date.fromisoformat(str(value)[:10])
             elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
                 return [await self.parse_filter_value(v, field) for v in value]
             parse_func = SQL_ALCHEMY_TYPE_MAPPING.get(type(field_type))

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-11-21
+
+### Added
+
+- **`DateFilter`** — operator input for SQLAlchemy ``Date`` columns (`ge` / `lt`
+  half-open ranges, ISO date strings). `FilterBuilder` parses `Date` columns
+  separately from `DateTimeFilter`.
+
+### Fixed
+
+- **`FilterBuilder`** — boolean operator values (e.g. ``isnull: true``) are no
+  longer coerced to the column type, so ``DateTimeFilter(isnull=True)`` works.
+
 ## [0.7.1] — 2026-11-21
 
 ### Added
