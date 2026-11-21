@@ -235,6 +235,46 @@ resolve. Join-heavy ACLs (criteria that depend on joins added inside
 `@optimize_field(PrefetchRelated(..., filter=...))` / `filter_current_user`, or
 enforce visibility with Postgres RLS ([postgres-rls.md](postgres-rls.md)).
 
+### Per-relationship ACL override
+
+Sometimes the same related model needs a **different** ACL on one GraphQL edge
+than on another (e.g. people-scope on `Person.employment`, company/RLS-only on
+`Employment.manager`). Model-keyed registration cannot express that. Attach
+`RelationAccessFilter` to the edge — the optimizer applies that filter's
+`whereclause` for that `selectinload` only and does **not** overwrite the
+model-keyed registry (sibling edges keep the ClassVar filter):
+
+```python
+from strawberry_alchemy.filtering import RelationAccessFilter
+
+@strawberry.type
+class EmploymentType(BaseNodeType):
+    access_filter: ClassVar[type[EmploymentAccessFilter]] = EmploymentAccessFilter
+
+    # ClassVar ACL (SEC-020) — default nested load
+    contracts: list[ContractType] = strawberry.UNSET
+
+    # Reporting-line: same Employment model, looser ACL on this edge only
+    manager: EmploymentType | None = strawberry.field(
+        default=strawberry.UNSET,
+        extensions=[RelationAccessFilter(ReportingLineEmploymentAccessFilter)],
+    )
+```
+
+For computed fields that prefetch a relationship via `@optimize_field`, pass the
+same override on the hint:
+
+```python
+@optimize_field(
+    PrefetchRelated(
+        "manager",
+        fields=["id", "title"],
+        access_filter=ReportingLineEmploymentAccessFilter,
+    )
+)
+async def manager_label(self) -> str | None: ...
+```
+
 ## Operator reference
 
 `FilterOperators.LOOKUP_OPERATORS` maps lookup names to SQL expressions. The full set:

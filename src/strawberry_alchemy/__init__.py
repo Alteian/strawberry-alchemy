@@ -14,6 +14,7 @@ from strawberry_alchemy.filtering import (
     IDFilter,
     IntFilter,
     JSONFilter,
+    RelationAccessFilter,
     StringFilter,
 )
 from strawberry_alchemy.mapping import (
@@ -128,6 +129,7 @@ __all__ = (
     "QueryAnalyzer",
     "QueryOptimizer",
     "QueryResult",
+    "RelationAccessFilter",
     "RelayConnectionSelection",
     "ResourceInstances",
     "RolePermission",

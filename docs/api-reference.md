@@ -47,6 +47,7 @@ from strawberry_alchemy import (
 
     # filtering
     AccessControlFilter,   # per-model row-level security base (must be named *AccessFilter)
+    RelationAccessFilter,  # FieldExtension: per-edge ACL override for nested selectinload
     FilterBuilder,         # Strawberry inputs / dicts -> SQL WHERE
     FilterOperators,       # LOOKUP_OPERATORS registry
     IDFilter, StringFilter, IntFilter, BooleanFilter, DateTimeFilter, EnumFilter,
@@ -204,7 +205,8 @@ class PrefetchRelated:
     fields: list[str] | dict[str, Any] | None = None
     filter_current_user: bool = False
     filter: Callable[[type], Any] | None = None
-    has_custom_loading: bool            # property
+    access_filter: type[AccessControlFilter] | AccessControlFilter | None = None
+    has_custom_loading: bool            # property (true if filter / filter_current_user / access_filter)
 
 class SelectColumns:                    # SelectColumns("s3_key", "variants")
     fields: tuple[str, ...]
@@ -341,6 +343,15 @@ class AccessControlFilter(metaclass=AccessControlMeta):   # subclass names must 
 
     @staticmethod
     async def apply_filter(query, model, context_user) -> query
+```
+
+### `RelationAccessFilter`
+
+Marker `FieldExtension` for per-edge nested ACL (does not re-register on the model map):
+
+```python
+class RelationAccessFilter(FieldExtension):
+    def __init__(self, access_filter: type[AccessControlFilter] | AccessControlFilter) -> None: ...
 ```
 
 ## Repository

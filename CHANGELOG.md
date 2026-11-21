@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-21
+
+### Added
+
+- **`RelationAccessFilter`** — `FieldExtension` for per-relationship ACL override on
+  nested `selectinload`. Use when the same related model needs a different
+  `AccessControlFilter` on one GraphQL edge than on another (e.g. reporting-line
+  manager vs people-scope employment). The override is edge-local and does **not**
+  overwrite the model-keyed ACL registry.
+- **`PrefetchRelated.access_filter`** — same edge-local ACL for `@optimize_field`
+  prefetches; AND-ed with `filter` / `filter_current_user` conditions.
+
 ## [0.6.0] — 2026-11-12
 
 ### Added

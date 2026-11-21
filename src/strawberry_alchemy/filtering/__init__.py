@@ -1,4 +1,4 @@
-from .access_control import AccessControlFilter
+from .access_control import AccessControlFilter, RelationAccessFilter
 from .filter_builder import FilterBuilder
 from .inputs import (
     BooleanFilter,
@@ -21,5 +21,6 @@ __all__ = (
     "IDFilter",
     "IntFilter",
     "JSONFilter",
+    "RelationAccessFilter",
     "StringFilter",
 )

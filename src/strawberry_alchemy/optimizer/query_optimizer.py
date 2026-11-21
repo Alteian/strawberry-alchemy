@@ -18,7 +18,7 @@ from strawberry.types import Info
 from strawberry.types.nodes import FragmentSpread, InlineFragment
 
 from strawberry_alchemy.enums import Ordering
-from strawberry_alchemy.filtering.access_control import AccessControlFilter
+from strawberry_alchemy.filtering.access_control import AccessControlFilter, RelationAccessFilter
 from strawberry_alchemy.filtering.filter_builder import FilterBuilder
 from strawberry_alchemy.utils import camel_to_snake
 
@@ -130,12 +130,12 @@ class QueryOptimizer:
             query = await cast("Any", access_filter).apply_filter(query, model, context_user)
         return query
 
-    async def _acl_whereclause_for_model(
-        self, related_model: type[Any], context_user: Any
+    async def _acl_whereclause_from_filter(
+        self,
+        access_filter: type[AccessControlFilter] | AccessControlFilter,
+        related_model: type[Any],
+        context_user: Any,
     ) -> ColumnElement[Any] | None:
-        access_filter = self.get_access_filter(related_model)
-        if access_filter is None:
-            return None
         # Typical ACLs only add .where(...); that whereclause composes with
         # selectinload(...).and_(...). Join-heavy ACLs may still expose a
         # whereclause that is unusable without those joins — prefer
@@ -143,6 +143,34 @@ class QueryOptimizer:
         base = select(related_model)
         filtered = await cast("Any", access_filter).apply_filter(base, related_model, context_user)
         return getattr(filtered, "whereclause", None)
+
+    async def _acl_whereclause_for_model(
+        self, related_model: type[Any], context_user: Any
+    ) -> ColumnElement[Any] | None:
+        access_filter = self.get_access_filter(related_model)
+        if access_filter is None:
+            return None
+        return await self._acl_whereclause_from_filter(access_filter, related_model, context_user)
+
+    @staticmethod
+    def _relation_access_filter_for_field(
+        strawberry_type: type | None,
+        field_name: str,
+    ) -> type[AccessControlFilter] | AccessControlFilter | None:
+        """Edge-local ACL from ``RelationAccessFilter`` on a GraphQL field (not model registry)."""
+        if strawberry_type is None:
+            return None
+        definition = getattr(strawberry_type, "__strawberry_definition__", None)
+        if definition is None:
+            return None
+        for field_def in definition.fields:
+            snake = camel_to_snake(field_def.name)
+            if field_def.name != field_name and snake != field_name:
+                continue
+            for ext in field_def.extensions or ():
+                if isinstance(ext, RelationAccessFilter):
+                    return ext.access_filter
+        return None
 
     def normalize_field_name(self, field_name: str) -> str:
         if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items"):
@@ -612,11 +640,12 @@ class QueryOptimizer:
             return None
         return filter_fn(related_model)
 
-    def _build_filtered_selectinload(
+    async def _build_filtered_selectinload(
         self,
         model: type[Any],
         prefetch: PrefetchRelated,
         user_id: Any | None,
+        context_user: Any | None = None,
     ) -> Any | None:
         _, attr = self.get_model_attribute(model, prefetch.relationship)
         if attr is None or not self.is_relationship(attr):
@@ -640,6 +669,15 @@ class QueryOptimizer:
         custom = self._resolve_custom_filter(prefetch, related_model)
         if custom is not None:
             conditions.append(custom)
+
+        if prefetch.access_filter is not None:
+            acl_clause = await self._acl_whereclause_from_filter(
+                prefetch.access_filter,
+                related_model,
+                context_user,
+            )
+            if acl_clause is not None:
+                conditions.append(acl_clause)
 
         if not conditions:
             return selectinload(attr)
@@ -704,8 +742,14 @@ class QueryOptimizer:
                             order_col.desc() if config["direction"] == Ordering.DESC else order_col.asc()
                         ]
 
-                    # Always try ACL even when context_user is None — filters often deny anonymous.
-                    criteria = await self._acl_whereclause_for_model(related_model, context_user)
+                    # Edge override (RelationAccessFilter) wins over model-keyed ClassVar;
+                    # never write the override into access_filters[related_model].
+                    edge_acl = self._relation_access_filter_for_field(strawberry_type, field_name)
+                    if edge_acl is not None:
+                        criteria = await self._acl_whereclause_from_filter(edge_acl, related_model, context_user)
+                    else:
+                        # Always try ACL even when context_user is None — filters often deny anonymous.
+                        criteria = await self._acl_whereclause_for_model(related_model, context_user)
                     relationship_loader = (
                         selectinload(attr.and_(criteria)) if criteria is not None else selectinload(attr)
                     )
@@ -802,7 +846,7 @@ class QueryOptimizer:
         )
 
         for prefetch in deps.filtered_prefetches:
-            filtered_opt = self._build_filtered_selectinload(model, prefetch, user_id)
+            filtered_opt = await self._build_filtered_selectinload(model, prefetch, user_id, context_user=context_user)
             if filtered_opt is not None:
                 load_options.append(filtered_opt)
                 if self.analyzer:
@@ -812,6 +856,8 @@ class QueryOptimizer:
                         filter_desc = "current_user"
                     if prefetch.filter:
                         filter_desc += "+custom" if filter_desc else "custom"
+                    if prefetch.access_filter is not None:
+                        filter_desc += "+acl" if filter_desc else "acl"
                     self.analyzer.record_load_strategy(prefetch.relationship, "selectinload+filter", filter_desc)
 
         annotation_configs: list[

@@ -102,13 +102,15 @@ def test_query_analyzer_lifecycle() -> None:
 
 
 def test_prefetch_related_defaults() -> None:
-    from strawberry_alchemy import PrefetchRelated
+    from strawberry_alchemy import PrefetchRelated, RelationAccessFilter
 
     pr = PrefetchRelated(relationship="tags")
     assert pr.relationship == "tags"
     assert pr.fields is None
     assert pr.filter_current_user is False
+    assert pr.access_filter is None
     assert pr.has_custom_loading is False
+    assert RelationAccessFilter is not None
 
 
 def test_annotate_exists_resolved_attr() -> None:

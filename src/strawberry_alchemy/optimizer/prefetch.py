@@ -1,8 +1,14 @@
-from collections.abc import Callable
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 PREFETCH_ATTR = "__optimizer_prefetch__"
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from strawberry_alchemy.filtering.access_control import AccessControlFilter
 
 
 @dataclass(frozen=True)
@@ -11,10 +17,11 @@ class PrefetchRelated:
     fields: list[str] | dict[str, Any] | None = None
     filter_current_user: bool = False
     filter: Callable[[type], Any] | None = None
+    access_filter: type[AccessControlFilter] | AccessControlFilter | None = None
 
     @property
     def has_custom_loading(self) -> bool:
-        return self.filter_current_user or self.filter is not None
+        return self.filter_current_user or self.filter is not None or self.access_filter is not None
 
 
 @dataclass(frozen=True)
