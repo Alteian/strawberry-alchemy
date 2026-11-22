@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-11-22
+
+### Added
+
+- **`DateFilter`** is re-exported from the top-level `strawberry_alchemy` package
+  (alongside the other filter inputs).
+
+### Changed
+
+- **Docs** — full rewrite of MkDocs + README for 0.7.x APIs, including a new
+  Recipes page for production wrapping patterns; CONTRIBUTING covers
+  `make docs` / `make docs-serve`.
+
 ## [0.7.2] — 2026-11-21
 
 ### Added
@@ -290,7 +303,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema module** — `BaseSchema` Pydantic base with `dump_for_db()`, `to_type()`, and skip-unloaded-relationships validator.
 - **CI workflow** — lint, test, build via GitHub Actions.
 
-[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/Alteian/strawberry-alchemy/compare/v0.7.2...v0.7.3
 [0.1.5]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Alteian/strawberry-alchemy/compare/v0.1.2...v0.1.3

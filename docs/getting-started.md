@@ -1,64 +1,123 @@
-# Getting Started
+# Getting started
 
-This page walks through building a minimal blog API (Post / Comment) with
-strawberry-alchemy, step by step.
+This walkthrough builds a minimal blog API (Post / Comment) with strawberry-alchemy.
 
-A complete, importable version of this walkthrough (plus tests) lives in
-[`examples/blog`](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog). Prefer that tree when you want copy-pasteable
-modules that stay in sync with the library.
+A complete, importable version lives in
+[`examples/blog`](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog)
+and is covered by `make test ARGS="tests/examples"`. Prefer that tree when you want
+copy-pasteable modules that stay in sync with the library.
 
-The app exposes: a Relay `node` query, a `list` query with filters and pagination,
-a Relay `connection` query, and `create` / `update` / `delete` mutations.
+The app exposes: a Relay `node` query, a filtered `list` query, a Relay
+`connection` query, and `create` / `update` / `delete` mutations.
 
-## 1. Define your SQLAlchemy models
+## Context contract
 
-Use the provided `Base` (PostgreSQL-only; it uses `sqlalchemy.dialects.postgresql.UUID`).
-It supplies a UUID primary key, `created_at` / `updated_at` timestamps, and automatic
-snake_case table names.
+Every resolver that uses `BaseNodeType.resolve_*` expects `info.context` to provide:
+
+| Attribute | Role |
+|---|---|
+| `async get_session() -> AsyncSession` | DB session for the request |
+| `identity` (awaitable) or `user` | Current user for ACL / permissions |
+| `db_execution_lock` | `asyncio.Lock` serializing optimizer DB work on the shared session |
+
+```python
+# context.py
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@dataclass
+class ExampleUser:
+    id: UUID
+    role: str = "user"
+
+
+@dataclass
+class ExampleContext:
+    session: AsyncSession
+    user: ExampleUser | None
+    db_execution_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    async def get_session(self) -> AsyncSession:
+        return self.session
+
+    @property
+    def identity(self) -> Any:
+        async def _identity() -> ExampleUser | None:
+            return self.user
+
+        return _identity()
+```
+
+Wire this into your ASGI / FastAPI context getter the same way you would any
+Strawberry context.
+
+## 1. Models
+
+The library `Base` uses Postgres `UUID` dialect types. For SQLite tests (as in the
+blog example), define your own declarative base with `sqlalchemy.Uuid` and the same
+`id` / `created_at` / `updated_at` columns. Soft-delete is optional via
+`SoftDeleteMixin`.
 
 ```python
 # models.py
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from strawberry_alchemy.models import Base
+from strawberry_alchemy import SoftDeleteMixin
 
 
-class Post(Base):
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user.id"))
+class ExampleBase(DeclarativeBase):
+    pass
+
+
+class Post(SoftDeleteMixin, ExampleBase):
+    __tablename__ = "post"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     title: Mapped[str] = mapped_column(String(255))
-    body: Mapped[str]
+    body: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    comments: Mapped[list["Comment"]] = relationship(back_populates="post")
 
-    comments: Mapped[list["Comment"]] = relationship(back_populates="post", cascade="all, delete-orphan")
 
+class Comment(ExampleBase):
+    __tablename__ = "comment"
 
-class Comment(Base):
-    post_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("post.id"))
-    body: Mapped[str]
-
-    post: Mapped["Post"] = relationship(back_populates="comments")
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    post_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("post.id"), index=True)
+    body: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    post: Mapped[Post] = relationship(back_populates="comments")
 ```
 
-For non-PostgreSQL databases (e.g. SQLite for tests) write your own base with
-`sqlalchemy.Uuid` instead, keeping the same `id` / `created_at` / `updated_at`
-columns.
+## 2. Access filters
 
-## 2. Define an access filter (row-level security)
-
-Every `BaseNodeType` subclass needs an access filter. It is applied to every query
-the optimizer builds for that model, so rows the current user must not see are
-filtered out at the SQL level.
+Every `BaseNodeType` needs an `AccessControlFilter` subclass (name must end with
+`AccessFilter`). It is applied to root queries and nested `selectinload`s for that
+model.
 
 ```python
 # access_filters.py
 from typing import Any
 
-from models import Post
+from strawberry_alchemy import AccessControlFilter
 
-from strawberry_alchemy.filtering import AccessControlFilter
+from .models import Comment, Post
 
 
 class PostAccessFilter(AccessControlFilter):
@@ -66,142 +125,100 @@ class PostAccessFilter(AccessControlFilter):
 
     @staticmethod
     async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
-        # Allow everything in this example. Real apps scope by tenant/owner here,
-        # e.g.: return query.where(model.user_id == context_user.id)
-        return query
+        if context_user is None:
+            return query.where(False)
+        return query.where(model.user_id == context_user.id)
+
+
+class CommentAccessFilter(AccessControlFilter):
+    model_class = Comment
+
+    @staticmethod
+    async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
+        if context_user is None:
+            return query.where(False)
+        return query.join(Post, model.post_id == Post.id).where(Post.user_id == context_user.id)
 ```
 
-Note: subclasses must be named `*AccessFilter` (enforced by a metaclass) and must
-declare `model_class`. See [Filtering → Access-control filters](filtering.md#access-control-filters-row-level-security)
-for production patterns.
+## 3. Filter inputs
 
-## 3. Define your GraphQL types
-
-Subclass `BaseNodeType` and declare the access filter as a `ClassVar`. Scalar fields
-that map to columns default to `strawberry.UNSET` so the optimizer can defer columns
-the client did not request. Relationship fields point at other `BaseNodeType`
-subclasses using `strawberry.lazy`.
-
-```python
-# types.py
-import uuid
-from typing import Annotated, ClassVar
-
-import strawberry
-from strawberry.types import Info
-
-from access_filters import PostAccessFilter
-from strawberry_alchemy import BaseNodeType, AnnotateExists, optimize_field
-
-
-@strawberry.type
-class PostType(BaseNodeType):
-    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
-
-    user_id: uuid.UUID | None = strawberry.UNSET
-    title: str | None = strawberry.UNSET
-    body: str | None = strawberry.UNSET
-    comments: list[Annotated["CommentType", strawberry.lazy(".types")]] | None = strawberry.UNSET
-
-    @strawberry.field
-    @optimize_field(AnnotateExists("comments"))
-    async def has_comments(self, info: Info) -> bool:
-        # Value was computed by a SQL EXISTS subquery; see query-optimizer.md
-        return getattr(self, "_comments_exists", False)
-
-
-@strawberry.type
-class CommentType(BaseNodeType):
-    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
-
-    post_id: uuid.UUID | None = strawberry.UNSET
-    body: str | None = strawberry.UNSET
-    post: Annotated["PostType", strawberry.lazy(".types")] | None = strawberry.UNSET
-```
-
-## 4. Define filter inputs
-
-Compose the provided filter inputs and add `AND` / `OR` lists for nesting.
+Compose operator inputs (`StringFilter`, `IDFilter`, …) into a `@strawberry.input`.
+`AND` / `OR` lists nest; non-column fields can be handled via `CUSTOM_FILTERS` on
+the type (see next section).
 
 ```python
 # filters.py
 import strawberry
 
-from strawberry_alchemy.filtering import DateTimeFilter, IDFilter, StringFilter
+from strawberry_alchemy import IDFilter, StringFilter
 
 
 @strawberry.input
 class PostFilter:
-    AND: list["PostFilter"] | None = strawberry.UNSET
-    OR: list["PostFilter"] | None = strawberry.UNSET
-    id: IDFilter | None = strawberry.UNSET
     title: StringFilter | None = strawberry.UNSET
     body: StringFilter | None = strawberry.UNSET
-    created_at: DateTimeFilter | None = strawberry.UNSET
+    user_id: IDFilter | None = strawberry.UNSET
+    title_search: str | None = strawberry.UNSET
+    AND: list["PostFilter"] | None = strawberry.UNSET
+    OR: list["PostFilter"] | None = strawberry.UNSET
 ```
 
-## 5. Define a deletion handler (cascade deletes)
-
-If a model has dependent rows that are not handled by database-level `ON DELETE
-CASCADE`, collect their ids here; the repository calls the handler hooks around
-`session.delete`.
+## 4. GraphQL types
 
 ```python
-# deletion.py
-from uuid import UUID
+# types.py
+from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from models import Comment, Post
-from strawberry_alchemy.repository import BaseDeletionHandler, DependentMap
-
-
-class PostDeletionHandler(BaseDeletionHandler[Post]):
-    async def collect_dependents(
-        self, session: AsyncSession, entity_id: UUID, instance: Post
-    ) -> DependentMap:
-        result = await session.execute(select(Comment.id).where(Comment.post_id == entity_id))
-        return {"comments": [row[0] for row in result.fetchall()]}
-```
-
-## 6. Define your repository and schema
-
-`BaseSchema` is a Pydantic model with `from_attributes` enabled, so it validates
-directly from ORM instances. `BaseRepository` needs the model and schema classes.
-
-```python
-# repositories.py
 import uuid
-from typing import Any, ClassVar
+from collections.abc import Callable
+from typing import Annotated, Any, ClassVar
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import strawberry
+from sqlalchemy import or_
+from strawberry.types import Info
 
-from models import Comment, Post
-from strawberry_alchemy import BaseRepository, BaseSchema
+from strawberry_alchemy import AnnotateExists, BaseNodeType, optimize_field
 
-
-class PostSchema(BaseSchema):
-    id: uuid.UUID | None = None
-    title: str
-    body: str
-    user_id: uuid.UUID
+from .access_filters import CommentAccessFilter, PostAccessFilter
 
 
-class PostRepository(BaseRepository[Post, PostSchema]):
-    model_cls: ClassVar[type[Any]] = Post
-    schema_cls: ClassVar[type[Any]] = PostSchema
-    relation_models: ClassVar[dict[str, type[Any]]] = {"comments": Comment}
+def _title_search_filter(model: type[Any], value: Any) -> Any:
+    term = f"%{value}%"
+    return or_(model.title.ilike(term), model.body.ilike(term))
 
-    def __init__(self, session: AsyncSession, **kwargs: Any) -> None:
-        super().__init__(session, model_cls=Post, schema_cls=PostSchema, **kwargs)
+
+@strawberry.type
+class CommentType(BaseNodeType):
+    access_filter: ClassVar[type[CommentAccessFilter]] = CommentAccessFilter
+
+    post_id: uuid.UUID | None = strawberry.UNSET
+    body: str | None = strawberry.UNSET
+    post: Annotated[PostType | None, strawberry.lazy(".types")] = strawberry.UNSET
+
+
+@strawberry.type
+class PostType(BaseNodeType):
+    access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
+    CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {
+        "title_search": _title_search_filter,
+    }
+
+    user_id: uuid.UUID | None = strawberry.UNSET
+    title: str | None = strawberry.UNSET
+    body: str | None = strawberry.UNSET
+    comments: list[Annotated[CommentType, strawberry.lazy(".types")]] | None = strawberry.UNSET
+
+    @strawberry.field
+    @optimize_field(AnnotateExists("comments"))
+    async def has_comments(self, info: Info) -> bool:
+        return bool(getattr(self, "_comments_exists", False))
 ```
 
-## 7. Write your queries
+Scalar / relationship fields default to `strawberry.UNSET` so unrequested values
+are not required on construction. `BaseNodeType` already provides Relay `id`,
+`created_at`, and `updated_at`.
 
-Queries delegate to `BaseNodeType` classmethods. The optimizer reads the actual
-selection set of the incoming GraphQL query — no N+1 queries, unrequested columns
-are deferred.
+## 5. Queries
 
 ```python
 # queries.py
@@ -209,19 +226,19 @@ import strawberry
 from strawberry.relay import GlobalID
 from strawberry.types import Info
 
-from filters import PostFilter
-from types import PostType
 from strawberry_alchemy import ListResult, OptimizedListConnection
-from strawberry_alchemy.permissions import IsAuthenticated
+
+from .filters import PostFilter
+from .types import PostType
 
 
 @strawberry.type
 class PostQueries:
-    @strawberry.field(permission_classes=[IsAuthenticated])
+    @strawberry.field
     async def node(self, info: Info, id: GlobalID) -> PostType | None:
         return await PostType.resolve_node(node_id=id.node_id, info=info)
 
-    @strawberry.field(permission_classes=[IsAuthenticated])
+    @strawberry.field
     async def list(
         self,
         info: Info,
@@ -229,9 +246,11 @@ class PostQueries:
         offset: int | None = None,
         filters: PostFilter | None = strawberry.UNSET,
     ) -> ListResult[PostType]:
-        return await PostType.resolve_list(info=info, limit=limit, offset=offset, filters=filters)
+        return await PostType.resolve_list(
+            info=info, limit=limit, offset=offset, filters=filters
+        )
 
-    @strawberry.field(permission_classes=[IsAuthenticated])
+    @strawberry.field
     async def connection(
         self,
         info: Info,
@@ -242,7 +261,12 @@ class PostQueries:
         filters: PostFilter | None = strawberry.UNSET,
     ) -> OptimizedListConnection[PostType]:
         return await PostType.resolve_connection(
-            info=info, after=after, before=before, first=first, last=last, filters=filters
+            info=info,
+            after=after,
+            before=before,
+            first=first,
+            last=last,
+            filters=filters,
         )
 
 
@@ -253,11 +277,88 @@ class Query:
         return PostQueries()
 ```
 
-## 8. Write your mutations
+## 6. Schemas and repositories
 
-Mutations go through the repository. `create` returns a validated schema; use
-`result.to_type(PostType)` (which calls `PostType.from_schema`) to build the
-GraphQL type. `delete` runs the deletion handler hooks when one is passed.
+```python
+# schemas.py
+import uuid
+from datetime import datetime
+
+from strawberry_alchemy import BaseSchema
+
+
+class CommentSchema(BaseSchema):
+    id: uuid.UUID | None = None
+    post_id: uuid.UUID | None = None
+    body: str
+
+
+class PostSchema(BaseSchema):
+    id: uuid.UUID | None = None
+    user_id: uuid.UUID
+    title: str
+    body: str
+    deleted_at: datetime | None = None
+    comments: list[CommentSchema] | None = None
+```
+
+```python
+# repositories.py
+from typing import ClassVar
+
+from strawberry_alchemy import BaseRepository
+
+from .models import Comment, Post
+from .schemas import CommentSchema, PostSchema
+
+
+class PostRepository(BaseRepository[Post, PostSchema]):
+    model_cls: ClassVar[type[Post]] = Post
+    schema_cls: ClassVar[type[PostSchema]] = PostSchema
+    relation_models: ClassVar[dict[str, type]] = {"comments": Comment}
+    soft_delete_field: ClassVar[str | None] = "deleted_at"
+
+
+class CommentRepository(BaseRepository[Comment, CommentSchema]):
+    model_cls: ClassVar[type[Comment]] = Comment
+    schema_cls: ClassVar[type[CommentSchema]] = CommentSchema
+```
+
+With ClassVars set, callers use `PostRepository(session)` without repeating model /
+schema types.
+
+## 7. Deletion handler
+
+```python
+# deletion.py
+import uuid
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from strawberry_alchemy import BaseDeletionHandler, DependentMap
+
+from .models import Comment, Post
+
+
+class PostDeletionHandler(BaseDeletionHandler[Post]):
+    async def collect_dependents(
+        self, session: AsyncSession, entity_id: uuid.UUID, instance: Post
+    ) -> DependentMap:
+        rows = (
+            await session.execute(select(Comment.id).where(Comment.post_id == entity_id))
+        ).scalars().all()
+        return {"comments": list(rows)}
+
+    async def handle_cascade(
+        self, session: AsyncSession, entity_id: uuid.UUID, dependents: DependentMap
+    ) -> None:
+        comment_ids = dependents.get("comments") or []
+        if comment_ids:
+            await session.execute(delete(Comment).where(Comment.id.in_(comment_ids)))
+```
+
+## 8. Mutations
 
 ```python
 # mutations.py
@@ -265,10 +366,12 @@ import strawberry
 from strawberry.relay import GlobalID
 from strawberry.types import Info
 
-from deletion import PostDeletionHandler
-from repositories import PostRepository, PostSchema
-from types import PostType
-from strawberry_alchemy.permissions import IsAuthenticated
+from strawberry_alchemy import IsAuthenticated, OwnerPermission, prepare_mutation_resources
+
+from .deletion import PostDeletionHandler
+from .repositories import PostRepository
+from .schemas import PostSchema
+from .types import PostType
 
 
 @strawberry.input
@@ -291,7 +394,7 @@ class DeletePostInput:
 
 @strawberry.type
 class PostMutations:
-    @strawberry.mutation(permission_classes=[IsAuthenticated])
+    @strawberry.mutation
     async def create_post(self, info: Info, input: CreatePostInput) -> PostType:
         session = await info.context.get_session()
         user = await info.context.identity
@@ -299,92 +402,51 @@ class PostMutations:
         created = await PostRepository(session).create(schema=schema)
         return created.to_type(PostType)
 
-    @strawberry.mutation(permission_classes=[IsAuthenticated])
+    @strawberry.mutation
     async def update_post(self, info: Info, input: UpdatePostInput) -> PostType:
         session = await info.context.get_session()
-        schema = PostSchema.from_input(input)
+        schema = PostSchema.from_input(
+            input, user_id=(await info.context.identity).id
+        )
         result = await PostRepository(session).update(schema=schema)
         return result.to_type(PostType)
 
-    @strawberry.mutation(permission_classes=[IsAuthenticated])
+    @strawberry.mutation
     async def delete_post(self, info: Info, input: DeletePostInput) -> bool:
         session = await info.context.get_session()
+        repo = PostRepository(session, deletion_handler=PostDeletionHandler())
         schema = PostSchema.from_input(input)
-        await PostRepository(session, deletion_handler=PostDeletionHandler()).delete(
-            id=schema.id
+        await prepare_mutation_resources(
+            info,
+            {"post_id": input.id},
+            loaders={"post_id": lambda value: repo.get_by_id(value)},
+            permissions=[
+                IsAuthenticated(),
+                OwnerPermission(owner_field="user_id", resource_key="post_id"),
+            ],
         )
-        return True
-
-
-@strawberry.type
-class Mutation:
-    @strawberry.field
-    def posts(self) -> PostMutations:
-        return PostMutations()
+        report = await repo.delete(id=schema.id, strict=False)
+        return not report.has_failures
 ```
 
-## 9. Assemble the schema
+`from_input` / `schema_from_input` copy same-named fields, decode `GlobalID` →
+`UUID`, skip `UNSET`, and let kwargs (like `user_id`) win.
 
-The `relay_max_results` config value caps `first` / `last` in connections.
+## 9. Schema
 
 ```python
 # schema.py
 import strawberry
-from strawberry.schema.config import StrawberryConfig
 
-from mutations import Mutation
-from queries import Query
+from .mutations import Mutation
+from .queries import Query
 
-schema = strawberry.Schema(
-    query=Query,
-    mutation=Mutation,
-    config=StrawberryConfig(auto_camel_case=True, relay_max_results=100),
-)
+schema = strawberry.Schema(query=Query, mutation=Mutation)
 ```
 
-## Context contract
+## Next steps
 
-`BaseNodeType` resolvers rely on your request context providing a few attributes.
-This is the only wiring the library needs from your framework layer:
-
-```python
-# context.py
-import asyncio
-from collections.abc import AsyncGenerator
-
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from strawberry.fastapi import BaseContext
-
-
-class Context(BaseContext):
-    def __init__(self) -> None:
-        super().__init__()
-        # current_user / identity: plain value, property, or awaitable are all fine
-        self.current_user = {"id": "00000000-0000-0000-0000-000000000000", "role": "admin"}
-        self.identity = self.current_user
-        self._engine = create_async_engine("postgresql+asyncpg://...")
-        self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
-        # Serializes concurrent SQL on the request session (required by resolvers)
-        self.db_execution_lock = asyncio.Lock()
-
-    async def get_session(self) -> AsyncSession:
-        return self._session_factory()
-```
-
-Required attributes:
-
-| Attribute | Type | Purpose |
-|---|---|---|
-| `get_session()` | async → `AsyncSession` | Session used by the optimizer |
-| `identity` or `user` | value or awaitable | Current user; read by access filters and `filter_current_user` hints |
-| `current_user` | value or property | Read by permission classes |
-| `db_execution_lock` | `asyncio.Lock` | Serializes DB access on the request session |
-
-## What happens behind the scenes
-
-When `resolve_list` runs, `QueryOptimizer` inspects the selection set of the
-incoming GraphQL operation, registers the type's access filter, and builds one
-query: nested relationships become `selectinload`, unrequested scalar columns
-become `defer()`ed, and `has_comments` is satisfied by an `EXISTS` subquery
-annotation instead of loading all comments. See
-[Query optimizer](query-optimizer.md) for the full details.
+- [Types and models](types-and-models.md) — `Base`, connections, ordering
+- [Filtering](filtering.md) — operators, JSONB, `RelationAccessFilter`
+- [Query optimizer](query-optimizer.md) — all `@optimize_field` hints
+- [Recipes](recipes.md) — production wrapping patterns

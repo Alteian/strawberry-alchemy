@@ -1,24 +1,25 @@
 # strawberry-alchemy
 
-Batteries-included toolkit for building **Strawberry GraphQL** APIs backed by **SQLAlchemy**.
-It turns Strawberry selection sets into a single optimized SQLAlchemy query, and ships
-ready-made building blocks for filtering, Relay pagination, CRUD repositories,
-row-level security, permissions, and output mapping.
+Batteries-included toolkit for building **Strawberry GraphQL** APIs backed by
+**SQLAlchemy**. It turns the incoming selection set into one optimized query
+(defer unrequested columns, `selectinload` nested relations, SQL annotations)
+and ships the surrounding cast: filters, Relay pagination, repositories,
+row-level ACL, permissions helpers, and input/output mapping.
 
 ## What it gives you
 
-| Module | What it does |
+| Area | What it does |
 |---|---|
-| **QueryOptimizer** | Analyzes the incoming GraphQL selection set and builds one optimized SQLAlchemy query: automatic `selectinload` for nested relationships, `defer()` for unrequested columns, and SQL `EXISTS` / `COUNT` / ancestry CTE annotations |
-| **`optimize_field` hints** | Declarative decorators: `PrefetchRelated`, `SelectColumns`, `AnnotateExists`, `AnnotateAnyExists`, `AnnotateCount`, `AnnotateCustom`, `AnnotateAncestry` |
-| **FilterBuilder** | Strawberry filter inputs → SQLAlchemy `WHERE`, with `AND` / `OR`, relationship traversal, custom filters, and Postgres JSONB lookups (`JSONFilter`) |
-| **Types** | `BaseNodeType` (Relay `Node` with UUID id + timestamps), `OptimizedListConnection` / `Edge` / `PageInfo`, `ListResult` |
-| **Repository** | Async CRUD with `DeletionReport` / `strict`, soft-delete helpers, relation management, cascade deletion handlers |
-| **Mapping** | Async helpers to convert SQLAlchemy instances into Strawberry types while respecting the selected field tree |
-| **Permissions** | `IsAuthenticated`, `RolePermission`, `OwnerPermission`, `ObjectAccessPermission`, resource-bag helpers |
-| **Postgres RLS** | Session GUC helpers (`apply_rls_context` / `set_rls_guc`) for app-owned `CREATE POLICY` DDL |
-| **Models & Schema** | `Base` (+ optional `SoftDeleteMixin`), `BaseSchema` Pydantic base safe to validate from ORM instances |
-| **Utilities** | `camel_to_snake`, `Ordering` enum, `NotFoundError` |
+| **QueryOptimizer** | Selection set → one SQLAlchemy query: `selectinload`, `defer()`, `EXISTS` / `COUNT` / ancestry CTE annotations |
+| **`@optimize_field` hints** | `PrefetchRelated`, `SelectColumns`, `AnnotateExists`, `AnnotateAnyExists`, `AnnotateCount`, `AnnotateCustom`, `AnnotateAncestry` |
+| **FilterBuilder** | Strawberry filter inputs → `WHERE`, with `AND` / `OR`, relation joins, `CUSTOM_FILTERS`, JSONB key filters |
+| **Types** | `BaseNodeType` (Relay `Node`), `ListResult`, `OptimizedListConnection` / `Edge` / `PageInfo` |
+| **Repository** | Async CRUD, soft-delete, relation add/remove, `DeletionReport` / cascade handlers |
+| **Mapping & schema** | `BaseSchema`, `schema_from_input` / `from_input`, SQLAlchemy → Strawberry mapping |
+| **Access control** | `AccessControlFilter` (row ACL), `RelationAccessFilter` (per-edge ACL override) |
+| **Permissions** | Auth helpers + `prepare_mutation_resources` for mutation loaders |
+| **Postgres RLS** | Session GUC helpers for app-owned `CREATE POLICY` DDL |
+| **Models** | `Base` (+ optional `SoftDeleteMixin`) |
 
 ## Requirements
 
@@ -37,49 +38,56 @@ uv add strawberry-alchemy
 
 ## How the pieces fit together
 
-The library is built around a small contract between your GraphQL types and the
-query optimizer:
+```mermaid
+flowchart LR
+  Client[GraphQL client] --> Resolver[resolve_list / resolve_connection]
+  Resolver --> Opt[QueryOptimizer]
+  Opt --> ACL[AccessControlFilter]
+  Opt --> Filters[FilterBuilder]
+  Opt --> Hints["@optimize_field hints"]
+  Opt --> SQL[SQLAlchemy query]
+  SQL --> Map[map_sqlalchemy_to_type]
+  Map --> Type[BaseNodeType]
+```
 
-1. Your GraphQL type subclasses `BaseNodeType`, declares an `access_filter` (row-level
-   security) and its scalar/relationship fields.
-2. Query resolvers delegate to classmethods — `resolve_node`, `resolve_nodes`,
-   `resolve_list`, `resolve_connection` — which read the incoming selection set from
-   `info`, build one optimized SQLAlchemy query, and map results back to Strawberry types.
-3. Computed fields (e.g. `hasComments`, `coverThumbUrl`) are decorated with
-   `@optimize_field(...)` so the optimizer knows what data they need.
-4. Filter inputs are built from the provided `IDFilter` / `StringFilter` / etc.
-   and passed to the same resolvers; `FilterBuilder` converts them to SQL.
-5. Mutations use `BaseRepository` + `BaseSchema` for CRUD, optionally with a
-   `BaseDeletionHandler` for cascade deletes.
+1. Subclass `BaseNodeType`, declare an `access_filter`, and field the columns /
+   relationships the client may select.
+2. Query resolvers call `resolve_node` / `resolve_list` / `resolve_connection`.
+   Those methods read `info`, build one optimized query, apply ACL + filters, and
+   map rows back to Strawberry types.
+3. Computed fields use `@optimize_field(...)` so the optimizer knows what SQL to
+   emit (`EXISTS`, counts, prefetches, …).
+4. Mutations use `BaseRepository` + `BaseSchema` / `schema_from_input`, optionally
+   with `prepare_mutation_resources` and a `BaseDeletionHandler`.
 
-A complete walkthrough of these pieces working together is in
-[Getting started](getting-started.md).
+Walk through a full blog API in [Getting started](getting-started.md). Production
+wrapping patterns (project repositories, tenancy, custom order) live in
+[Recipes](recipes.md).
 
-## Documentation index
+## Documentation
 
-- [Getting started](getting-started.md) — full walkthrough: models, types, filters, queries, mutations, schema
-- [Blog example](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog) — runnable core-pattern sketch (not every 0.3/0.4 API)
-- [Types & models](types-and-models.md) — `BaseNodeType`, `ListResult`, `OptimizedListConnection`, the `Base` model
-- [Queries](queries.md) — `resolve_node`, `resolve_list`, `resolve_connection`, ordering, pagination
-- [Query optimizer](query-optimizer.md) — automatic load strategies, `@optimize_field` hints, `QueryAnalyzer`
-- [Postgres RLS](postgres-rls.md) — session GUC helpers for app-owned row-level policies
-- [Filtering](filtering.md) — filter inputs, operators, `AND`/`OR`, custom filters, access-control filters
-- [Repository](repository.md) — CRUD, relation management, deletion handlers
-- [Mapping & schema](mapping-and-schema.md) — `BaseSchema`, `dump_for_db`, `to_type`, `from_input`, mapping helpers
-- [Permissions](permissions.md) — permission classes and resource checks
-- [API reference](api-reference.md) — every public export with signatures
-- [Roadmap](roadmap.md) — planned fixes, hardening, and features
+- [Getting started](getting-started.md) — models, ACL, types, filters, queries, mutations
+- [Blog example](https://github.com/Alteian/strawberry-alchemy/tree/master/examples/blog) — runnable core-pattern sketch
+- [Types and models](types-and-models.md)
+- [Queries](queries.md)
+- [Filtering](filtering.md)
+- [Query optimizer](query-optimizer.md)
+- [Mapping and schema](mapping-and-schema.md)
+- [Repository](repository.md)
+- [Permissions](permissions.md)
+- [Postgres RLS](postgres-rls.md)
+- [Recipes](recipes.md) — production patterns
+- [API reference](api-reference.md)
+- [Roadmap](roadmap.md)
 
 ## Development
 
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-mise install          # pins from mise.toml (same as CI)
+mise install
 make sync && make doctor
 make ci
 ```
 
-## License
-
-[MIT](https://github.com/Alteian/strawberry-alchemy/blob/master/LICENSE)
+Docs: `make docs` / `make docs-serve`. See [Contributing](https://github.com/Alteian/strawberry-alchemy/blob/master/CONTRIBUTING.md).

@@ -1,49 +1,52 @@
 # Postgres RLS session context
 
 strawberry-alchemy does **not** invent `CREATE POLICY` DDL. Policies stay
-app-owned. This package sets transaction-local GUCs that policies can read via
-`current_setting(...)`.
+app-owned. This package only sets transaction-local GUCs that policies can read
+via `current_setting(...)`.
 
-Python `AccessControlFilter` remains available as optional defense-in-depth.
+Row SQL ACL via `AccessControlFilter` is a separate layer — many apps use both
+(Alchemy filters for GraphQL-shaped rules, Postgres RLS as a hard tenancy
+boundary). See [Recipes](recipes.md#app-tenancy-vs-alchemy-acl).
 
 ## Helpers
 
 ```python
 from strawberry_alchemy import apply_rls_context, clear_rls_context, set_rls_guc
 
-# After acquiring a session / starting a transaction:
-await apply_rls_context(session, {
-    "user_id": str(info.context.identity.id),
-    "tenant_id": str(info.context.identity.tenant_id),
-})
-# → SELECT set_config('app.user_id', '...', true);  (is_local=true)
-# → SELECT set_config('app.tenant_id', '...', true);
+# Single setting (becomes app.company_id unless name already contains a dot)
+await set_rls_guc(session, "company_id", str(company_id))
 
-await set_rls_guc(session, "role", "admin")          # app.role
-await clear_rls_context(session, ["user_id", "role"])
+# Batch
+await apply_rls_context(session, {"company_id": company_id, "user_id": user_id})
+
+# Clear (sets NULL locally)
+await clear_rls_context(session, ["company_id", "user_id"])
 ```
 
-Names without a dot get the `app.` prefix (override with `prefix=`).
+All use `set_config(..., is_local=true)` so values do not leak past the
+transaction. Target may be an `AsyncSession` or `AsyncConnection`.
 
-## Typical GraphQL wiring
+Default prefix is `app` (`DEFAULT_GUC_PREFIX`). Pass `prefix=` to override.
+Bare names become `app.<name>`; dotted names are used as-is.
 
-Call `apply_rls_context` once when the request opens its DB session (context
-factory / middleware), **before** resolvers run. Use the same transaction the
-optimizer and repository share so `SET LOCAL` applies to every query.
-
-## Example policy (app-owned)
+## Sample policy
 
 ```sql
-ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE posts FORCE ROW LEVEL SECURITY;
+ALTER TABLE employment ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY posts_owner ON posts
-  USING (user_id::text = current_setting('app.user_id', true));
+CREATE POLICY employment_tenant ON employment
+  USING (company_id = NULLIF(current_setting('app.company_id', true), '')::uuid);
 ```
 
-Use a non-bypass role for the application connection so RLS is enforced.
+Application code at the start of a request / unit of work:
 
-## Testing
+```python
+async with session.begin():
+    await apply_rls_context(session, {"company_id": ctx.company_id})
+    ...
+```
 
-CI uses sqlite and does not execute `set_config`. Unit tests mock
-`session.execute`. Integration against a real Postgres is left to consuming apps.
+## CI
+
+Postgres-backed tests live under `tests/postgres/` and run with
+`make test-postgres` (GitHub Actions Postgres 16 service in CI).

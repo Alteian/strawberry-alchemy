@@ -26,8 +26,7 @@ CI uses the same `mise.toml` pins and the same Make targets (`make lint`,
 
 - We use **ruff** for linting and formatting (`make format` / `make lint`).
 - Target Python **3.13+** — use modern syntax (`type[X]`, `X | Y`, generics with `[T]`).
-- Type annotations are required — `make typecheck` runs mypy. Clearing existing
-  mypy debt so CI can hard-gate is tracked in [docs/roadmap.md](docs/roadmap.md).
+- Type annotations are required — `make typecheck` runs mypy (CI hard-gates).
 
 ---
 
@@ -45,10 +44,30 @@ All new features and bug fixes must include tests. We use:
 
 ---
 
+## Documentation
+
+Docs are MkDocs Material under `docs/`. Build and preview:
+
+```bash
+make docs         # mkdocs build --strict → site/
+make docs-serve   # live reload
+```
+
+When you add or rename a public export:
+
+1. Update `src/strawberry_alchemy/__init__.py` (`__all__`) if it belongs at the
+   package root.
+2. Keep [docs/api-reference.md](docs/api-reference.md) in sync with `__all__`
+   and any intentional submodule-only exports.
+3. Update the relevant guide page (and [docs/recipes.md](docs/recipes.md) for
+   production wrapping patterns).
+
+---
+
 ## Making Changes
 
 1. **Fork** the repo and create a feature branch from `master`.
-2. **Make your changes** with tests.
+2. **Make your changes** with tests (and docs when the public API changes).
 3. Ensure the local CI pipeline is green:
    ```bash
    make ci

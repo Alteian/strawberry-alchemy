@@ -7,6 +7,7 @@ from strawberry_alchemy.exceptions import NotFoundError
 from strawberry_alchemy.filtering import (
     AccessControlFilter,
     BooleanFilter,
+    DateFilter,
     DateTimeFilter,
     EnumFilter,
     FilterBuilder,
@@ -99,6 +100,7 @@ __all__ = (
     "BaseRepository",
     "BaseSchema",
     "BooleanFilter",
+    "DateFilter",
     "DateTimeFilter",
     "DeletionFailure",
     "DeletionPartialFailure",

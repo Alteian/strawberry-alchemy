@@ -1,298 +1,170 @@
 # Filtering
 
-`FilterBuilder` translates Strawberry filter inputs into SQLAlchemy `WHERE` clauses.
-Filter inputs are plain `@strawberry.input` classes composed from the provided
-operator inputs, plus `AND` / `OR` lists for nesting.
+`FilterBuilder` turns Strawberry filter inputs (and plain dicts) into SQLAlchemy
+`WHERE` clauses. Filters support nested `AND` / `OR`, relationship traversal,
+custom callables, and Postgres JSONB operators.
 
-## Built-in filter inputs
+## Operator inputs
 
-| Input | Operators |
+Import from `strawberry_alchemy` (or `strawberry_alchemy.filtering`):
+
+| Input | Typical operators |
 |---|---|
-| `IDFilter` | `exact`, `in` (`in_`), `not_in` (`not_in_`), `isnull` — values are Relay `GlobalID`s |
-| `StringFilter` | `exact`, `iexact`, `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith`, `in`, `not_in`, `isnull` |
-| `IntFilter` | `exact`, `gt`, `ge`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` (2-element list) |
+| `IDFilter` | `exact`, `in_`, `not_in_`, `isnull` |
+| `StringFilter` | `exact`, `iexact`, `contains`, `icontains`, `startswith`, `istartswith`, `endswith`, `iendswith`, `in_`, `not_in_`, `isnull` |
+| `IntFilter` | `exact`, `gt`, `ge`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range` |
 | `BooleanFilter` | `exact`, `isnull` |
-| `DateFilter` | `exact`, `ge`, `gt`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` — calendar `date` values (ISO-8601 date strings accepted) |
-| `DateTimeFilter` | `exact`, `ge`, `gt`, `lt`, `le`, `in`, `not_in`, `isnull`, `range` — accepts ISO-8601 strings via `datetime.fromisoformat` |
-| `EnumFilter[T]` | `exact`, `in`, `not_in`, `isnull` — generic over a Strawberry enum |
+| `DateFilter` | `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range` (ISO date strings; for SQL `Date` columns) |
+| `DateTimeFilter` | same comparison set as `DateFilter` (ISO datetimes; for `DateTime` columns) |
+| `EnumFilter[T]` | `exact`, `in_`, `not_in_`, `isnull` |
+| `JSONFilter` | `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`, `jsonb_has_any`, `jsonb_has_all`, `jsonb_path`, `isnull` |
 
-## Declaring a filter input
+GraphQL field names use trailing underscores where needed (`in_`, `not_in_`);
+`FilterBuilder` maps them to lookups `in` / `not_in`.
 
-Every field defaults to `strawberry.UNSET` (unset = "no condition"). Field names must
-match model attribute names; camelCase GraphQL fields are converted to snake_case
-automatically.
+Boolean operator values such as `isnull: true` are **not** coerced to the column
+type (fixed in 0.7.2), so `DateTimeFilter(isnull=True)` works.
+
+## Composing a filter input
 
 ```python
-# filters.py
 import strawberry
-
-from strawberry_alchemy.filtering import DateTimeFilter, EnumFilter, IDFilter, IntFilter, StringFilter
+from strawberry_alchemy import DateFilter, IDFilter, StringFilter
 
 
 @strawberry.input
 class PostFilter:
-    AND: list["PostFilter"] | None = strawberry.UNSET
-    OR: list["PostFilter"] | None = strawberry.UNSET
-    id: IDFilter | None = strawberry.UNSET
     title: StringFilter | None = strawberry.UNSET
-    body: StringFilter | None = strawberry.UNSET
-    like_count: IntFilter | None = strawberry.UNSET
-    status: EnumFilter[PostStatusEnum] | None = strawberry.UNSET
-    created_at: DateTimeFilter | None = strawberry.UNSET
+    user_id: IDFilter | None = strawberry.UNSET
+    published_on: DateFilter | None = strawberry.UNSET
+    AND: list[PostFilter] | None = strawberry.UNSET
+    OR: list[PostFilter] | None = strawberry.UNSET
 ```
 
-Pass the input to `resolve_list` / `resolve_connection` (or to
-`QueryOptimizer.optimize_query(filters=...)`, which calls `FilterBuilder` for you):
-
-```python
-result = await PostType.resolve_list(
-    info=info,
-    filters=PostFilter(
-        title=StringFilter(icontains="graphql"),
-        created_at=DateTimeFilter(ge="2026-01-01T00:00:00Z"),
-    ),
-)
-```
-
-All conditions on the same field are `AND`ed; different fields are `AND`ed together.
-
-## Nesting with `AND` / `OR`
+Example GraphQL:
 
 ```graphql
-{
-  posts(
-    filters: {
+query {
+  posts {
+    list(filters: {
       OR: [
-        { title: { icontains: "graphql" } }
-        { body: { icontains: "sqlalchemy" } }
+        { title: { icontains: "alchemy" } }
+        { userId: { exact: "…" } }
       ]
-      AND: [
-        { status: { exact: PUBLISHED } }
-        { likeCount: { gt: 10 } }
-      ]
+    }) {
+      items { id title }
+      totalCount
     }
-  ) {
-    items { id title }
   }
 }
 ```
 
-## Filtering across relationships
+## Relationship filters
 
-Relationship attributes on the filter input (or dotted `__` keys in raw dicts) produce
-`OUTER JOIN`s to aliased related models, so you can filter a model by its related
-rows.
+Nested filter objects on relationship field names become joins. The related
+model's columns use the same operator inputs.
 
-```python
-@strawberry.input
-class CommentFilter:
-    body: StringFilter | None = strawberry.UNSET
-    post: PostFilter | None = strawberry.UNSET  # nested filter on the related Post
-```
+## Custom filters (`CUSTOM_FILTERS`)
 
-Or programmatically with dicts:
+For non-column keys (full-text shortcuts, office “tabs”, etc.), register callables
+on the GraphQL type:
 
 ```python
-from strawberry_alchemy.filtering import FilterBuilder
+from collections.abc import Callable
+from typing import Any, ClassVar
 
-builder = FilterBuilder()
-expr = await builder.build_filters(User, {"organization__name__icontains": "acme"})
-```
-
-## Custom filter fields
-
-Register custom filter handlers on the Strawberry type via the `_custom_filters_registry`
-class variable, keyed by model class and filter field name. Each handler receives the
-model (possibly an alias) and the raw input value, and returns a SQL expression. This
-is how you expose filters that do not map 1:1 to columns (search across JSONB, etc.).
-
-```python
-# custom_filters.py
-from sqlalchemy import Text, cast, or_
+def _title_search_filter(model: type[Any], value: Any) -> Any:
+    term = f"%{value}%"
+    return or_(model.title.ilike(term), model.body.ilike(term))
 
 
-def title_search_filter(model, value):
-    if not value:
-        return None
-    pattern = f"%{' '.join(str(value).split())}%"
-    return or_(
-        cast(model.title, Text).ilike(pattern),
-        cast(model.description, Text).ilike(pattern),
-    )
-
-
-PROPERTY_CUSTOM_FILTERS = {
-    Property: {
-        "title_search": title_search_filter,
-    }
-}
-```
-
-```python
-# types.py
 @strawberry.type
-class PropertyType(BaseNodeType):
-    access_filter: ClassVar[type[PropertyAccessFilter]] = PropertyAccessFilter
-    _custom_filters_registry: ClassVar = PROPERTY_CUSTOM_FILTERS
+class PostType(BaseNodeType):
+    access_filter: ClassVar[...] = PostAccessFilter
+    CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {
+        "title_search": _title_search_filter,
+    }
 ```
 
+The filter input exposes `title_search: str | None`; `FilterBuilder` invokes the
+callable instead of treating it as a column.
+
+!!! tip "Older apps"
+    Pre-0.2 code sometimes used `_custom_filters_registry` directly. Prefer
+    `CUSTOM_FILTERS` on the type; the registry is wired automatically.
+
+## JSONB key filters (Postgres)
+
+Nested keys under a JSON/JSONB column compile to `column['key'].astext` lookups.
+Partial JSONB selections stay undeferred and trim output keys to the selection
+tree.
+
 ```python
-# filters.py — declare the field on the input type too
 @strawberry.input
-class PropertyFilter:
-    title_search: str | None = strawberry.UNSET
+class LocalizedStringFilter:
+    cs: StringFilter | None = strawberry.UNSET
+    en: StringFilter | None = strawberry.UNSET
+
+
+@strawberry.input
+class ListingFilter:
+    title: LocalizedStringFilter | None = strawberry.UNSET  # JSONB column
 ```
 
-The registry is read automatically by `QueryOptimizer` when `strawberry_type` is
-passed, so `resolve_list` / `resolve_connection` pick it up. `FilterBuilder` also
-accepts `custom_filters` directly: `FilterBuilder(custom_filters={User: {"is_active": handler}})`.
+`JSONFilter` covers containment / key existence operators on the whole document.
 
-## Using `FilterBuilder` standalone
+## `AccessControlFilter`
 
-You can build SQL expressions without the optimizer:
-
-```python
-from strawberry_alchemy.filtering import FilterBuilder
-
-builder = FilterBuilder()
-expression = await builder.build_filters(Post, {"title__icontains": "graphql", "like_count__gt": 10})
-stmt = select(Post).where(expression)
-```
-
-`build_filter_dict(filter_input)` converts a Strawberry input object into the flat
-`{"field__lookup": value}` dict format (handling `AND`/`OR`, nested inputs, and
-`GlobalID` decoding) — useful when you need the intermediate representation.
-
-## Access-control filters (row-level security)
-
-`AccessControlFilter` is a per-model filter applied to the **root** query the
-optimizer builds for that model (including the `totalCount` subquery). Subclasses:
-
-- must be named `*AccessFilter` (metaclass-enforced),
-- declare `model_class`,
-- implement `async apply_filter(query, model, context_user) -> query`.
-
-The `context_user` comes from `info.context.identity` (or `info.context.user`, either
-plain values or awaitables).
+Row-level ACL applied to root queries, `totalCount`, and nested `selectinload`s
+for that model. Subclass names **must** end with `AccessFilter`.
 
 ```python
-# access_filters.py
-from typing import Any
-
-from models import Post
-from strawberry_alchemy.filtering import AccessControlFilter
-
-
 class PostAccessFilter(AccessControlFilter):
     model_class = Post
 
     @staticmethod
     async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
         if context_user is None:
-            return query.where(False)  # anonymous users see nothing
-        if getattr(context_user, "is_admin", False):
-            return query               # admins see everything
-        return query.where(model.user_id == context_user.id)  # owners see their rows
+            return query.where(False)
+        return query.where(model.user_id == context_user.id)
 ```
 
-Registration is automatic through `BaseNodeType` (it passes the type's
-`access_filter` to `QueryOptimizer.register_access_filter`). For raw optimizer use:
+Attach via `BaseNodeType.access_filter` ClassVar, or pass `access_filter=` into
+`resolve_*` / `PrefetchRelated`.
+
+This is **application SQL ACL**, orthogonal to Postgres RLS policies — see
+[Postgres RLS](postgres-rls.md) and [Recipes](recipes.md#app-tenancy-vs-alchemy-acl).
+
+## `RelationAccessFilter`
+
+`FieldExtension` for when a **nested edge** needs a different ACL than the
+model's default registry entry (e.g. reporting-line manager still readable when
+people-scope employment ACL would hide them).
 
 ```python
-optimizer = QueryOptimizer(info, session)
-optimizer.register_access_filter(Post, PostAccessFilter)
-# or by model name:
-optimizer.register_access_filter_by_name("Post", PostAccessFilter)
-```
+from strawberry_alchemy import RelationAccessFilter
 
-Override the ClassVar filter for a single resolve call when a field needs a
-different visibility rule (class or instance):
-
-```python
-@strawberry.field
-async def all_posts(self, info: Info) -> ListResult[PostType]:
-    return await PostType.resolve_list(info, access_filter=AdminPostAccessFilter)
-
-# Also accepted on resolve_node / resolve_nodes / resolve_connection.
-```
-
-Production patterns seen in real apps:
-
-- **Admin-only**: `return query.where(False)` unless the user has an admin role.
-- **Owner scoping**: `query.where(model.user_id == context_user.id)`.
-- **Published-or-assigned**: `or_(model.is_published.is_(True), model.assigned_agent_id == user.id)`.
-- **Child entities**: reuse the parent model's filter to inherit visibility rules.
-
-Note: access control applies to the root data query *and* the `total_count` query,
-so counts never leak root rows the user cannot see.
-
-**Nested relations:** when the optimizer builds `selectinload` for a relationship, it
-looks up any registered `AccessControlFilter` for the **related** model, runs
-`apply_filter` on a bare `select(related_model)`, and attaches the resulting
-`whereclause` via `selectinload(rel.and_(...))`. Related `BaseNodeType` ClassVar
-filters are discovered from the schema when not already registered on the root
-resolve. Join-heavy ACLs (criteria that depend on joins added inside
-`apply_filter`) may not compose cleanly with `selectinload.and_` — use
-`@optimize_field(PrefetchRelated(..., filter=...))` / `filter_current_user`, or
-enforce visibility with Postgres RLS ([postgres-rls.md](postgres-rls.md)).
-
-### Per-relationship ACL override
-
-Sometimes the same related model needs a **different** ACL on one GraphQL edge
-than on another (e.g. people-scope on `Person.employment`, company/RLS-only on
-`Employment.manager`). Model-keyed registration cannot express that. Attach
-`RelationAccessFilter` to the edge — the optimizer applies that filter's
-`whereclause` for that `selectinload` only and does **not** overwrite the
-model-keyed registry (sibling edges keep the ClassVar filter):
-
-```python
-from strawberry_alchemy.filtering import RelationAccessFilter
 
 @strawberry.type
 class EmploymentType(BaseNodeType):
-    access_filter: ClassVar[type[EmploymentAccessFilter]] = EmploymentAccessFilter
-
-    # ClassVar ACL (SEC-020) — default nested load
-    contracts: list[ContractType] = strawberry.UNSET
-
-    # Reporting-line: same Employment model, looser ACL on this edge only
-    manager: EmploymentType | None = strawberry.field(
+    ...
+    manager: PersonType | None = strawberry.field(
         default=strawberry.UNSET,
-        extensions=[
-            RelationAccessFilter(
-                ReportingLineEmploymentAccessFilter,
-                foreign_key="manager_employment_id",  # mutation to_type() fallback
-            )
-        ],
+        extensions=[RelationAccessFilter(ManagerPersonAccessFilter)],
     )
 ```
 
-Pass ``foreign_key`` when the same field must also work after a bare
-``schema.to_type()`` (no selectinload): if the attribute is empty but the FK is
-set, the extension loads via ``resolve_nodes`` with the edge ACL.
-
-For computed fields that prefetch a relationship via `@optimize_field`, pass the
-same override on the hint:
+Optional `foreign_key=` enables a mutation `to_type()` fallback: if the
+relationship attribute is missing but the FK is set, load via `resolve_nodes`
+with the edge ACL.
 
 ```python
-@optimize_field(
-    PrefetchRelated(
-        "manager",
-        fields=["id", "title"],
-        access_filter=ReportingLineEmploymentAccessFilter,
-    )
-)
-async def manager_label(self) -> str | None: ...
+extensions=[RelationAccessFilter(ManagerPersonAccessFilter, foreign_key="manager_id")]
 ```
 
-## Operator reference
+The override is **edge-local** — it does not overwrite the model-keyed ACL
+registry used by other edges or root queries.
 
-`FilterOperators.LOOKUP_OPERATORS` maps lookup names to SQL expressions. The full set:
-`exact`, `iexact`, `contains`, `icontains`, `in`, `not_in`, `gt`, `ge`, `lt`, `le`,
-`startswith`, `istartswith`, `endswith`, `iendswith`, `range`, `isnull`, plus Postgres
-JSONB lookups `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`,
-`jsonb_has_any`, `jsonb_has_all`, `jsonb_path` (use with
-`sqlalchemy.dialects.postgresql.JSONB` columns and the `JSONFilter` input).
-Case-insensitive/string operators fall back to equality on non-string columns, and
-`parse_filter_value` coerces incoming strings to the column's SQLAlchemy type.
-JSONB helpers are Postgres-oriented; sqlite tests cover registry/compile only.
+`PrefetchRelated(..., access_filter=...)` provides the same edge-local ACL for
+`@optimize_field` prefetches (AND-ed with any `filter` / `filter_current_user`
+conditions).

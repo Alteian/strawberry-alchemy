@@ -1,466 +1,242 @@
-# API Reference
+# API reference
 
 Everything importable from the top-level `strawberry_alchemy` package, grouped by
-module. Submodule paths are shown for the few names that are not re-exported at the
-top level.
-
-## Top-level exports
+area. Submodule-only symbols are listed at the end.
 
 ```python
-from strawberry_alchemy import (
-    # enums & exceptions
-    Ordering,              # strawberry.enum: ASC | DESC
-    NotFoundError,         # Exception raised by BaseRepository.get_by_id / update / delete
-
-    # models
-    Base,                  # SQLAlchemy DeclarativeBase: UUID pk + created_at/updated_at (PostgreSQL)
-    SoftDeleteMixin,       # optional deleted_at column for soft-delete repositories
-
-    # types
-    BaseNodeType,          # Relay Node with id/created_at/updated_at + resolver classmethods
-    ListResult,            # @strawberry.type: items + total_count
-    OptimizedListConnection,  # Relay Connection with total_count
-    Edge,                  # re-exported from strawberry.relay
-    PageInfo,              # re-exported from strawberry.relay
-    SliceMetadata,         # cursor-slice math helper (from_arguments, fetch_limit)
-
-    # optimizer
-    QueryOptimizer,        # selection-set -> one optimized SQLAlchemy query
-    QueryResult,           # frozen dataclass: items, selected_fields, total_count
-    QueryAnalyzer,         # per-query diagnostics (env: QUERY_ANALYZER_ENABLED; on_report hook)
-    FieldPath, FieldSelection, LeafSelection, RelayConnectionSelection,
-    optimize_field,        # decorator for computed-field hints
-    PrefetchRelated,       # hint: load relationship (optionally filtered) + fields
-    SelectColumns,         # hint: un-defer scalar columns of the current model
-    AnnotateExists,        # hint: correlated EXISTS subquery
-    AnnotateAnyExists,     # hint: OR of EXISTS over several relationships
-    AnnotateCount,         # hint: correlated COUNT subquery
-    AnnotateCustom,        # hint: custom SQL expression + optional mapper
-    AnnotateAncestry,      # hint: recursive parent-walk CTE (ids | chain)
-    build_recursive_dependency_tree,
-    merge_dependency_trees,
-    normalize_dependency_fields,
-    source_path_to_dependency_tree,
-    extract_at_path,
-    parse_selection_tree,
-    selection_to_model_fields,
-
-    # filtering
-    AccessControlFilter,   # per-model row-level security base (must be named *AccessFilter)
-    RelationAccessFilter,  # FieldExtension: per-edge ACL override for nested selectinload
-    FilterBuilder,         # Strawberry inputs / dicts -> SQL WHERE
-    FilterOperators,       # LOOKUP_OPERATORS registry
-    IDFilter, StringFilter, IntFilter, BooleanFilter, DateFilter, DateTimeFilter, EnumFilter,
-    JSONFilter,            # jsonb_contains / has_key / path / … (Postgres JSONB)
-
-    # mapping
-    map_sqlalchemy_to_type,
-    map_sqlalchemy_list_to_types,
-
-    # permissions
-    IsAuthenticated, RolePermission, OwnerPermission, ObjectAccessPermission,
-    BasePermissionResolver,
-    ResourceInstances,
-    HasId, IdentityLike, UserLike, PermissionContextLike, ModelRegistryLike,
-    extract_global_ids_from_info,
-    fetch_and_check_permissions,
-    map_ids_to_models,
-    prepare_mutation_resources,  # GlobalID parse → load → permission bag
-
-    # repository
-    BaseRepository,
-    BaseDeletionHandler,
-    DeletionReport, DeletionFailure, DeletionPartialFailure,
-
-    # schema
-    BaseSchema,
-    schema_from_input,     # GraphQL input → Pydantic/BaseSchema (GlobalID → UUID)
-
-    # utils
-    camel_to_snake,
-
-    # postgres RLS session GUCs
-    apply_rls_context,
-    clear_rls_context,
-    set_rls_guc,
-)
+import strawberry_alchemy
+print(strawberry_alchemy.__version__)
 ```
 
-Submodule-only helpers (not re-exported at the package root):
+## Enums and errors
 
-```python
-from strawberry_alchemy.mapping import register_global_id_type, clear_global_id_type_registry
-```
+| Symbol | Description |
+|---|---|
+| `Ordering` | Strawberry enum: `ASC`, `DESC` |
+| `NotFoundError` | Raised by repository get/update/delete misses |
 
-See [Postgres RLS](postgres-rls.md) for policy DDL and session wiring.
+## Models
+
+| Symbol | Description |
+|---|---|
+| `Base` | Abstract SQLAlchemy base: UUID PK, timestamps, auto `__tablename__` (Postgres UUID) |
+| `SoftDeleteMixin` | Adds nullable indexed `deleted_at` |
 
 ## Types
 
-### `BaseNodeType`
+| Symbol | Description |
+|---|---|
+| `BaseNodeType` | Relay `Node` + ClassVar ACL; `resolve_node(s)` / `resolve_list` / `resolve_connection` / `from_schema` |
+| `ListResult[T]` | `{items, total_count}` list wrapper |
+| `OptimizedListConnection[T]` | Relay connection + `total_count` |
+| `Edge` / `PageInfo` | Re-exports from `strawberry.relay` |
+| `SliceMetadata` | Cursor/first/last → start/end/`fetch_limit` |
+
+### `BaseNodeType` ClassVars
+
+- `access_filter` (required)
+- `CUSTOM_FILTERS: dict[str, Callable] = {}`
+- `model_class` (from access filter)
+
+### Resolve signatures
 
 ```python
-@strawberry.type
-class BaseNodeType(Node):
-    id: NodeID[uuid.UUID]
-    created_at: datetime | None = strawberry.UNSET
-    updated_at: datetime | None = strawberry.UNSET
-
-    access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]  # required
-    model_class: ClassVar[type[Any]]                     # derived from access_filter
-
-    @classmethod
-    def from_schema(cls, schema, **kwargs) -> Self              # schema -> type
-    @classmethod
-    async def resolve_node(cls, node_id: str, *, info: Info, access_filter=None) -> Self | None
-    @classmethod
-    async def resolve_nodes(cls, info: Info, node_ids: Iterable[str], access_filter=None, **kwargs) -> list[Self | None]
-    @classmethod
-    async def resolve_list(cls, info: Info, filters=strawberry.UNSET, **kwargs) -> ListResult[Self]
-    @classmethod
-    async def resolve_connection(cls, info: Info, **kwargs) -> OptimizedListConnection[Self]
-```
-
-`resolve_list` / `resolve_connection` accept `limit`, `offset`, `filters`, `order`,
-`access_filter` (optional per-call override of the ClassVar), and any
-`QueryOptimizer.optimize_query` keyword arguments.
-
-### `ListResult[T]`
-
-```python
-@strawberry.type
-class ListResult[T]:
-    items: list[T]
-    total_count: int | None = strawberry.UNSET
-```
-
-### `OptimizedListConnection[NodeType]`
-
-```python
-@strawberry.type
-class OptimizedListConnection[NodeType](relay.Connection[NodeType]):
-    edges: list[Edge[NodeType]]
-    page_info: PageInfo
-    total_count: int
-
-    @classmethod
-    async def resolve_connection(
-        cls, optimizer, model, graphql_type, info, *,
-        filters=None, order=None, after=None, before=None,
-        first=None, last=None, return_total_count=False,
-        strawberry_type=None, exclude_prefetch=None,
-    ) -> OptimizedListConnection[NodeType]
-```
-
-### `SliceMetadata`
-
-```python
-class SliceMetadata:
-    start: int
-    end: int | None
-    requested_count: int | None
-    fetch_limit: int | None           # property: requested_count + 1
-
-    @classmethod
-    def from_arguments(cls, info, before=None, after=None, first=None, last=None, max_results=None) -> SliceMetadata
+await Type.resolve_node(node_id: str, *, info: Info, access_filter=None) -> Type | None
+await Type.resolve_nodes(info: Info, node_ids: Iterable[str], access_filter=None, **kwargs) -> list[Type | None]
+await Type.resolve_list(info: Info, filters=UNSET, **kwargs) -> ListResult[Type]
+await Type.resolve_connection(info: Info, **kwargs) -> OptimizedListConnection[Type]
+Type.from_schema(schema, **kwargs) -> Type
 ```
 
 ## Optimizer
 
-### `QueryOptimizer`
+| Symbol | Description |
+|---|---|
+| `QueryOptimizer` | Selection set → one optimized SQLAlchemy query |
+| `QueryResult` | Frozen `{items, selected_fields, total_count}` |
+| `QueryAnalyzer` | Per-query diagnostics; env `QUERY_ANALYZER_ENABLED`; `on_report=` hook |
+| `optimize_field` | Decorator attaching optimizer hints to computed fields |
+| `PrefetchRelated` | `(relationship, fields=None, filter_current_user=False, filter=None, access_filter=None)` |
+| `SelectColumns` | `(*fields: str)` — undefer same-row scalars |
+| `AnnotateExists` | Correlated EXISTS → bool attr |
+| `AnnotateAnyExists` | OR of EXISTS over relationships |
+| `AnnotateCount` | Correlated COUNT |
+| `AnnotateCustom` | Custom SQL expression (+ optional mapper) |
+| `AnnotateAncestry` | Recursive parent-walk CTE (`value_mode` `"ids"` / `"chain"`) |
+| `FieldPath` | Immutable field-path helper |
+| `FieldSelection` / `LeafSelection` / `RelayConnectionSelection` | Typed selection-tree nodes |
+| `parse_selection_tree` | Parse raw selection dict → typed tree |
+| `extract_at_path` | Drill into selection by path |
+| `selection_to_model_fields` | Tree → model field dict |
+| `build_recursive_dependency_tree` | Nested self-relation dependency dict |
+| `merge_dependency_trees` / `normalize_dependency_fields` | Merge/normalize dependency trees |
+| `source_path_to_dependency_tree` | Dotted path → nested `{field: True}` tree |
+
+### `QueryOptimizer.optimize_query`
 
 ```python
-class QueryOptimizer:
-    def __init__(self, info: Info, session: AsyncSession, *, analyzer: QueryAnalyzer | None = None)
-
-    def register_access_filter(self, model_class: type, filter_class: type[AccessControlFilter] | AccessControlFilter) -> None
-    def register_access_filter_by_name(self, model_name: str, filter_class: type[AccessControlFilter] | AccessControlFilter) -> None
-    def get_access_filter(self, model: type) -> Any | None
-    async def apply_access_control(self, query, model) -> Any
-    async def optimize_query(self, model, *, node_ids=None, filters=None,
-        return_selected_fields=False, filter_context_user=False,
-        apply_access_control=True, order=None, limit=None, offset=None,
-        return_total_count=False, target_field_path=None,
-        strawberry_type=None, exclude_prefetch=None) -> QueryResult
-    def process_selected_fields(self, selected_fields: list) -> dict
-    def extract_model_fields(self, selected_fields: dict, level: int = 0) -> dict
-    def process_order(self, model, order_input) -> tuple[list, dict]
+await optimizer.optimize_query(
+    model,
+    *,
+    node_ids=None,
+    filters=None,
+    return_selected_fields=False,
+    filter_context_user=False,
+    apply_access_control=True,
+    order=None,
+    limit=None,
+    offset=None,
+    return_total_count=False,
+    target_field_path=None,
+    strawberry_type=None,
+    exclude_prefetch=None,
+) -> QueryResult
 ```
-
-### `QueryResult`
-
-```python
-@dataclass(frozen=True)
-class QueryResult:
-    items: list = []
-    selected_fields: dict = {}
-    total_count: int = 0
-```
-
-### Optimizer hints
-
-```python
-@dataclass(frozen=True)
-class PrefetchRelated:
-    relationship: str
-    fields: list[str] | dict[str, Any] | None = None
-    filter_current_user: bool = False
-    filter: Callable[[type], Any] | None = None
-    access_filter: type[AccessControlFilter] | AccessControlFilter | None = None
-    has_custom_loading: bool            # property (true if filter / filter_current_user / access_filter)
-
-class SelectColumns:                    # SelectColumns("s3_key", "variants")
-    fields: tuple[str, ...]
-
-@dataclass(frozen=True)
-class AnnotateExists:
-    relationship: str
-    filter_current_user: bool = False
-    to_attr: str = ""                   # default attr: _<relationship>_exists
-    filter: Callable[[type], Any] | None = None
-
-@dataclass(frozen=True)
-class AnnotateAnyExists:
-    relationships: list[str]
-    filter_current_user: bool = False
-    to_attr: str = ""                   # default attr: _<r1>_<r2>_any_exists
-    filter: Callable[[type], Any] | None = None
-
-@dataclass(frozen=True)
-class AnnotateCount:
-    relationship: str
-    filter_current_user: bool = False
-    to_attr: str = ""                   # default attr: _<relationship>_count
-    filter: Callable[[type], Any] | None = None
-
-@dataclass(frozen=True)
-class AnnotateCustom:
-    relationship: str
-    expression: Callable[..., Any] | None   # (model, related_model, rel_prop[, user_id]) -> SQL expr
-    to_attr: str = ""
-    mapper: Callable[[Any], Any] | None = None
-    filter_current_user: bool = False
-
-@dataclass(frozen=True)
-class AnnotateAncestry:                # recursive CTE; value_mode "ids"|"chain"
-    relationship: str
-    parent_field: str = "parent_id"
-    id_field: str = "id"
-    to_attr: str = ""
-    include_self: bool = True
-    root_first: bool = True
-    value_mode: str = "ids"
-    cte_name: str = "ancestry"
-```
-
-### `optimize_field`
-
-```python
-def optimize_field(*args: str | PrefetchRelated | SelectColumns | AnnotateExists
-                   | AnnotateAnyExists | AnnotateCount | AnnotateCustom | AnnotateAncestry,
-                   **kwargs: list[str] | dict[str, Any]) -> Callable
-```
-
-### Field-tree helpers
-
-```python
-def normalize_dependency_fields(fields: list[str] | dict[str, Any]) -> dict[str, Any]
-def merge_dependency_trees(base: dict, extra: dict) -> dict
-def build_recursive_dependency_tree(relationship: str, *, fields: list[str] | None = None, depth: int = 1) -> dict
-def source_path_to_dependency_tree(source_path: str) -> dict
-def get_prefetch_map(strawberry_type: type) -> dict[str, list[OptimizerHint]]
-```
-
-### `QueryAnalyzer`
-
-```python
-class QueryAnalyzer:
-    def __init__(self, *, log_sql: bool = True, log_level: int = logging.INFO,
-                 on_report: Callable[[QueryReport], None] | None = None)
-    def begin(self, model) / end(self) / reset(self)
-    # end() stamps wall-clock end time used by report().total_duration_ms
-    def record_selected_fields / record_deferred / record_relationship /
-         record_load_strategy / record_annotation /
-         record_query(..., duration_ms=0.0) / record_result / add_warning
-    def report(self) -> QueryReport
-    def log_report(self) -> QueryReport  # also invokes on_report when set
-```
-
-`QueryReport` fields: `model_name`, `total_duration_ms`, `query_count`, `queries`
-(each `QueryEvent` has `duration_ms` / `row_count`), `requested_fields`,
-`deferred_fields`, `relationships_loaded`, `annotations`, `load_strategies`,
-`warnings`, `result_count`, `total_count`; plus `summary()` and `as_dict()`.
-Pass `on_report=` to push reports into OTel/metrics without subclassing.
 
 ## Filtering
 
-### `FilterBuilder`
+| Symbol | Description |
+|---|---|
+| `AccessControlFilter` | Base for model-keyed row ACL (`*AccessFilter` name enforced) |
+| `RelationAccessFilter` | `FieldExtension`: edge-local ACL; optional `foreign_key=` |
+| `FilterBuilder` | Filter inputs / dicts → SQL WHERE |
+| `FilterOperators` | Lookup → SQLAlchemy operator registry |
+| `IDFilter` | `exact`, `in_`, `not_in_`, `isnull` |
+| `StringFilter` | string operators including `icontains`, … |
+| `IntFilter` | numeric comparisons + `range` |
+| `BooleanFilter` | `exact`, `isnull` |
+| `DateFilter` | date comparisons (SQL `Date` columns) |
+| `DateTimeFilter` | datetime comparisons |
+| `EnumFilter` | enum `exact` / `in_` / … |
+| `JSONFilter` | JSONB containment / key operators |
 
 ```python
-class FilterBuilder:
-    def __init__(self, custom_filters: dict[type, dict[str, Any]] | None = None)
-    async def build_filters(self, model, filters: dict[str, Any]) -> BinaryExpression | None
-    async def build_field_filter(self, model, field, value, lookup="exact", path_prefix="") -> BinaryExpression | None
-    def build_filter_dict(self, filters) -> dict[str, Any]
-    def process_filter_object(self, filter_obj, filter_dict, add_filter, parent_key="")
-    async def parse_filter_value(self, value, field) -> Any
-    alias_map: dict[str, AliasedClass | type]           # relationship aliases created while building
-```
-
-### Filter inputs
-
-All inputs default every field to `strawberry.UNSET`:
-
-- `IDFilter` — `exact: GlobalID`, `in_`, `not_in_`, `isnull`
-- `StringFilter` — `exact`, `iexact`, `contains`, `icontains`, `startswith`,
-  `istartswith`, `endswith`, `iendswith`, `in_`, `not_in_`, `isnull`
-- `IntFilter` — `exact`, `gt`, `ge`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range`
-- `BooleanFilter` — `exact`, `isnull`
-- `DateFilter` — `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range` (calendar dates)
-- `DateTimeFilter` — `exact`, `ge`, `gt`, `lt`, `le`, `in_`, `not_in_`, `isnull`, `range`
-- `EnumFilter[EnumType]` — `exact`, `in_`, `not_in_`, `isnull`
-- `JSONFilter` — `jsonb_contains`, `jsonb_contained_by`, `jsonb_has_key`,
-  `jsonb_has_any`, `jsonb_has_all`, `jsonb_path` (Postgres JSONB columns).
-  Nested localized-string style keys (e.g. `title={cs: StringFilter(...)}`)
-  compile to `column['cs'].astext` lookups.
-
-### `FilterOperators`
-
-```python
-class FilterOperators:
-    LOOKUP_OPERATORS = {
-        "exact", "iexact", "contains", "icontains", "in", "not_in",
-        "gt", "ge", "lt", "le", "startswith", "istartswith",
-        "endswith", "iendswith", "range", "isnull",
-        "jsonb_contains", "jsonb_contained_by", "jsonb_has_key",
-        "jsonb_has_any", "jsonb_has_all", "jsonb_path",
-    }
-```
-
-### `AccessControlFilter`
-
-```python
-class AccessControlFilter(metaclass=AccessControlMeta):   # subclass names must end with 'AccessFilter'
-    model_class: ClassVar[type[Any]]                      # required on subclasses
-
-    @staticmethod
-    async def apply_filter(query, model, context_user) -> query
-```
-
-### `RelationAccessFilter`
-
-Marker `FieldExtension` for per-edge nested ACL (does not re-register on the model map):
-
-```python
-class RelationAccessFilter(FieldExtension):
-    def __init__(self, access_filter: type[AccessControlFilter] | AccessControlFilter) -> None: ...
-```
-
-## Repository
-
-### `BaseRepository[ModelT, SchemaT, DeletionHandlerT]`
-
-```python
-class BaseRepository:
-    relation_models: ClassVar[dict[str, type]] = {}
-    soft_delete_field: ClassVar[str | None] = None   # e.g. "deleted_at"
-
-    def __init__(self, session: AsyncSession, model_cls, schema_cls, *, deletion_handler=None)
-
-    async def get_by_id(self, id: uuid.UUID, options=None, *, include_deleted=False) -> SchemaT
-    async def get_by_ids(self, ids, options=None, *, include_deleted=False) -> list[SchemaT]
-    async def create(self, schema, should_commit=True) -> SchemaT
-    async def update(self, schema, should_commit=True, instance=None) -> SchemaT
-    async def delete(self, id, should_commit=True, instance=None, *, strict=False) -> DeletionReport
-    async def soft_delete(self, id, should_commit=True, instance=None) -> SchemaT
-    async def add_related(self, id, relation_name, related_ids, should_commit=True) -> SchemaT
-    async def remove_related(self, id, relation_name, related_ids, should_commit=True) -> SchemaT
-```
-
-### `BaseDeletionHandler[ModelT]` / `DeletionReport`
-
-```python
-class DeletionReport:
-    entity_id: uuid.UUID | None
-    failures: list[DeletionFailure]
-    def record(...) / extend(...) / summary() -> str
-    @property
-    def has_failures(self) -> bool
-
-class DeletionPartialFailure(RuntimeError):  # raised when delete(..., strict=True) and failures exist
-    report: DeletionReport
-
-class BaseDeletionHandler:
-    def reset_report(self, entity_id=None) -> DeletionReport
-    @property
-    def report(self) -> DeletionReport
-    async def collect_dependents(self, session, entity_id, instance) -> DependentMap
-    async def pre_delete / cleanup_external / handle_cascade / post_delete ...
-```
-
-## Schema
-
-```python
-class BaseSchema(BaseModel):
-    # model_config: from_attributes=True, validate_assignment=True, arbitrary_types_allowed=True
-    def dump_for_db(self, exclude: set[str] | None = None, **kwargs) -> dict[str, Any]
-    def to_type[T](self, target_cls: type[T], **kwargs) -> T
-    @classmethod
-    def from_input(cls, input, **kwargs) -> Self   # GraphQL input → schema (GlobalID → UUID)
-
-def schema_from_input(model_cls: type[BaseModel], input, **kwargs) -> BaseModel
+RelationAccessFilter(access_filter, *, foreign_key: str | None = None)
 ```
 
 ## Mapping
 
-```python
-async def map_sqlalchemy_to_type(instance, info, target_type, selected_fields) -> T | None
-async def map_sqlalchemy_list_to_types(instances, info, target_type, selected_fields) -> list[T]
-async def map_sqlalchemy_to_type_with_path(instance, info, target_type, selected_fields, field_path="") -> T | None
-def get_graphql_type_from_sqlalchemy(info, instance) -> type | None
-def extract_fields_at_path(selected_fields, path) -> dict
-def extract_nested_fields(selected_fields, field_path) -> dict
-def create_global_id_from_field(field_name, value) -> GlobalID
-def register_global_id_type(field_name, type_name) -> None   # strawberry_alchemy.mapping
-def clear_global_id_type_registry() -> None
-```
-
-Dict / JSONB scalars are trimmed to keys requested in the selection tree when mapping.
+| Symbol | Description |
+|---|---|
+| `map_sqlalchemy_to_type` | Instance + selection → Strawberry type |
+| `map_sqlalchemy_list_to_types` | List mapping helper |
 
 ## Permissions
 
+| Symbol | Description |
+|---|---|
+| `IsAuthenticated` | Require logged-in user |
+| `RolePermission` | `RolePermission(role=...)` |
+| `OwnerPermission` | `OwnerPermission(owner_field="user_id", resource_key=None)` |
+| `ObjectAccessPermission` | Membership in an access collection field |
+| `BasePermissionResolver` | ABC: operation → permission list |
+| `ResourceInstances` | Loaded-resource bag for mutation checks |
+| `HasId` / `IdentityLike` / `UserLike` / `PermissionContextLike` / `ModelRegistryLike` | Protocols |
+| `extract_global_ids_from_info` | Decode GlobalIDs from input dict |
+| `map_ids_to_models` | IDs + loaders → `ResourceInstances` |
+| `fetch_and_check_permissions` | Run permission list against bag |
+| `prepare_mutation_resources` | Decode → load → check |
+
 ```python
-class IsAuthenticated:                                  # has_permission(info, **kwargs)
-class RolePermission(role=...)                          # user.role == role
-class OwnerPermission(owner_field="user_id", resource_key=None)
-class ObjectAccessPermission(access_field="allowed_user_ids", resource_key=None)
-
-class BasePermissionResolver(ABC):
-    def resolve(self, operation: str, *, data: dict | None = None, **kwargs) -> list
-
-async def fetch_and_check_permissions(info, permissions, resource_instances=None) -> None   # raises PermissionError
-def extract_global_ids_from_info(data, id_fields=None) -> dict[str, UUID | str | None]
-async def map_ids_to_models(ids, loaders, bag=None) -> ResourceInstances
-async def prepare_mutation_resources(info, ids, *, loaders, permissions) -> ResourceInstances
-
-class ResourceInstances:        # add / add_list / get / get_id / all / __contains__
+await prepare_mutation_resources(
+    info,
+    input_data,
+    *,
+    loaders: Mapping[str, Callable[[UUID], Awaitable[Any]]],
+    permissions: Sequence[Any],
+    id_fields: list[str] | None = None,
+) -> ResourceInstances
 ```
 
-Protocols: `HasId`, `IdentityLike` (stable `id`-only identity contract), `UserLike`
-(id + role), `PermissionContextLike` (`current_user`, `identity`), `ModelRegistryLike`.
+## Repository
+
+| Symbol | Description |
+|---|---|
+| `BaseRepository` | Async CRUD, soft-delete, relation add/remove, deletion reports |
+| `BaseDeletionHandler` | Cascade/cleanup hooks around delete |
+| `DeletionReport` / `DeletionFailure` / `DeletionPartialFailure` | Soft-failure reporting for delete |
+
+### `BaseRepository` ClassVars
+
+`model_cls`, `schema_cls`, `relation_models`, `soft_delete_field`
+
+### Methods
+
+```python
+get_by_id(id, options=None, *, include_deleted=False) -> SchemaT
+get_by_ids(ids, options=None, *, include_deleted=False) -> list[SchemaT]
+create(schema, should_commit=True) -> SchemaT
+update(schema, should_commit=True, instance=None) -> SchemaT
+delete(id, should_commit=True, instance=None, *, strict=False) -> DeletionReport
+soft_delete(id, should_commit=True, instance=None) -> SchemaT
+add_related(id, relation_name, related_ids, should_commit=True) -> SchemaT
+remove_related(id, relation_name, related_ids, should_commit=True) -> SchemaT
+apply_not_deleted(stmt) -> Select
+```
+
+## Schema
+
+| Symbol | Description |
+|---|---|
+| `BaseSchema` | Pydantic base: `dump_for_db`, `to_type`, `from_input` |
+| `schema_from_input` | GraphQL input → any Pydantic model |
+
+```python
+schema_from_input(model_cls, input, **kwargs) -> BaseModel
+BaseSchema.from_input(input, **kwargs) -> Self
+schema.dump_for_db(exclude=None, **kwargs) -> dict
+schema.to_type(target_cls, **kwargs) -> T
+```
+
+## Postgres RLS
+
+| Symbol | Description |
+|---|---|
+| `apply_rls_context` | Batch-set transaction-local `app.*` GUCs |
+| `set_rls_guc` | Set one GUC |
+| `clear_rls_context` | Clear named GUCs |
+
+```python
+await set_rls_guc(session, "company_id", str(company_id), *, prefix="app")
+await apply_rls_context(session, values: Mapping[str, Any], *, prefix="app")
+await clear_rls_context(session, names: list[str], *, prefix="app")
+```
 
 ## Utils
 
-```python
-def camel_to_snake(data: str | dict) -> str | dict   # "camelCaseString" -> "camel_case_string"
+| Symbol | Description |
+|---|---|
+| `camel_to_snake` | String or dict key conversion |
 
-class NotFoundError(Exception): ...
-```
+---
 
-## Enums
+## Submodule-only exports
 
-```python
-@strawberry.enum
-class Ordering(Enum):
-    ASC = "ASC"
-    DESC = "DESC"
-```
+### `strawberry_alchemy.filtering`
+
+All filter symbols are also re-exported at the package root (including
+`DateFilter`).
+
+### `strawberry_alchemy.optimizer`
+
+| Symbol | Description |
+|---|---|
+| `QueryEvent` / `QueryReport` | Analyzer event / report types |
+| `ResolvedDependencies` | Resolved hint dependency structure |
+| `get_prefetch_map` | Collect prefetch map from a Strawberry type |
+
+### `strawberry_alchemy.mapping`
+
+| Symbol | Description |
+|---|---|
+| `register_global_id_type` / `clear_global_id_type_registry` | Encode-side GlobalID registry |
+| `create_global_id_from_field` | Build GlobalID from registered field |
+| `map_sqlalchemy_to_type_with_path` | Mapping at a nested path |
+| `get_graphql_type_from_sqlalchemy` | Resolve GraphQL type for an instance |
+| `extract_fields_at_path` / `extract_nested_fields` | Selection-tree helpers |
+
+### `strawberry_alchemy.repository`
+
+| Symbol | Description |
+|---|---|
+| `DependentMap` | Type alias `dict[str, list[uuid.UUID]]` |

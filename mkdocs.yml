@@ -38,5 +38,6 @@ nav:
   - Repository: repository.md
   - Permissions: permissions.md
   - Postgres RLS: postgres-rls.md
+  - Recipes: recipes.md
   - API reference: api-reference.md
   - Roadmap: roadmap.md

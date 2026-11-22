@@ -1,161 +1,63 @@
 # Permissions
 
 The `strawberry_alchemy.permissions` module provides Strawberry-compatible
-permission classes (plain classes with `has_permission`) and helpers for checking
-permissions against *loaded resource instances* inside resolvers.
+permission check classes (plain objects with `has_permission`) and helpers for
+loading mutation targets into a resource bag before checking them.
 
-## Built-in permission classes
+!!! note "What production apps typically do"
+    Many codebases keep **field-level GraphQL auth** on Strawberry's own
+    `BasePermission` (or an app equivalent) and still use
+    `prepare_mutation_resources` / the resource bag for **mutation-time**
+    ownership checks. Using the library permission classes is optional.
 
-Use these in `@strawberry.field(permission_classes=[...])` or call their
-`has_permission` directly. All of them resolve the user from
-`info.context.current_user` or `info.context.identity`.
+## Permission classes
+
+All expose `has_permission(self, info, **kwargs) -> bool` and a `message` on
+deny. Helpers raise `PermissionError` when a check fails.
 
 ### `IsAuthenticated`
 
-Passes when a user is present.
+Requires a non-null current user on the context (`identity` / `current_user` /
+`user`, depending on what your context provides).
+
+### `RolePermission(role=...)`
+
+Requires `user.role == role` (see `UserLike` protocol: `id`, `role`).
+
+### `OwnerPermission(owner_field="user_id", resource_key=...)`
+
+Compares the current user's id to `getattr(resource, owner_field)`. Pass
+`resource_key` when using a `ResourceInstances` bag.
+
+### `ObjectAccessPermission(access_field="allowed_user_ids", resource_key=...)`
+
+Allows access when the current user id is in a collection field on the resource.
+
+## Resource bag and mutation helpers
 
 ```python
-@strawberry.field(permission_classes=[IsAuthenticated])
-async def posts(self, info: Info) -> ListResult[PostType]:
-    return await PostType.resolve_list(info=info)
-```
-
-### `RolePermission`
-
-Passes when the user's `role` attribute equals the configured role.
-
-```python
-@strawberry.field(permission_classes=[IsAuthenticated, RolePermission(role="admin")])
-async def admin_stats(self, info: Info) -> Stats:
-    ...
-```
-
-The `message` attribute (`"Role 'admin' is required."`) is raised as a
-`PermissionError` when a check fails via `fetch_and_check_permissions`.
-
-### `OwnerPermission` and `ObjectAccessPermission`
-
-These check a *resource instance* rather than just the user. They accept
-`resource_instances: ResourceInstances` as a kwarg (normally built with
-`map_ids_to_models`, see below) plus an `owner_field` / `access_field` and optional
-`resource_key` to select which instance to check.
-
-```python
-from strawberry_alchemy.permissions import OwnerPermission, ObjectAccessPermission
-
-OwnerPermission(owner_field="user_id")                    # instance.user_id == user.id
-OwnerPermission(owner_field="user_id", resource_key="post")
-
-ObjectAccessPermission(access_field="allowed_user_ids")   # user.id in instance.allowed_user_ids
-```
-
-Example mutation using the manual check pattern:
-
-```python
-@strawberry.mutation
-async def delete_post(self, info: Info, input: DeletePostInput) -> bool:
-    session = await info.context.get_session()
-    ids = extract_global_ids_from_info({"post_id": input.id})
-    bag = await map_ids_to_models(
-        ids,
-        loaders={"post_id": lambda post_id: PostRepository(session).get_by_id(post_id)},
-    )
-    await fetch_and_check_permissions(info, [IsAuthenticated(), OwnerPermission(owner_field="user_id", resource_key="post_id")], bag)
-
-    await PostRepository(session, deletion_handler=PostDeletionHandler()).delete(id=uuid.UUID(input.id.node_id))
-    return True
-```
-
-## Resource-instance helpers
-
-`ResourceInstances` is a simple keyed bag for the instances a mutation operates on:
-
-```python
-from strawberry_alchemy.permissions import ResourceInstances
-
-bag = ResourceInstances()
-bag.add("post", post_schema)          # single instance
-bag.add_list("comments", [c1, c2])    # list of instances
-bag.get("post")                       # -> instance | None
-bag.get_id("post")                    # -> instance.id | None
-```
-
-`extract_global_ids_from_info` decodes Relay `GlobalID`s from an input dict:
-
-```python
-from strawberry_alchemy.permissions import extract_global_ids_from_info
-
-ids = extract_global_ids_from_info(
-    {"post_id": input.id, "user_id": input.user_id},
-    id_fields=["post_id", "user_id"],   # defaults to keys ending in "_id"
-)
-# ids == {"post_id": UUID(...), "user_id": UUID(...)}
-```
-
-`map_ids_to_models` runs loader callables per id and fills a `ResourceInstances` bag:
-
-```python
-from strawberry_alchemy.permissions import map_ids_to_models
-
-bag = await map_ids_to_models(
-    ids,
-    loaders={
-        "post_id": lambda value: PostRepository(session).get_by_id(value),
-    },
+from strawberry_alchemy import (
+    IsAuthenticated,
+    OwnerPermission,
+    ResourceInstances,
+    extract_global_ids_from_info,
+    fetch_and_check_permissions,
+    map_ids_to_models,
+    prepare_mutation_resources,
 )
 ```
 
-`fetch_and_check_permissions` runs a list of permission objects (sync or async
-`has_permission`) and raises `PermissionError` with the permission's `message` on the
-first denial:
+### `prepare_mutation_resources`
+
+One-shot helper for mutation resolvers:
+
+1. Decode GlobalIDs from `input_data`
+2. Load models via `loaders`
+3. Run `permissions` against the bag
+4. Return `ResourceInstances`
 
 ```python
-from strawberry_alchemy.permissions import fetch_and_check_permissions
-
-await fetch_and_check_permissions(info, [IsAuthenticated(), RolePermission(role="admin")], bag)
-```
-
-## Writing your own permissions
-
-Any class with `has_permission(self, info, **kwargs) -> bool` (sync or async) and an
-optional `message` attribute works — with Strawberry's `permission_classes` and with
-`fetch_and_check_permissions`.
-
-```python
-class IsAdmin:
-    message = "Administrator access required."
-
-    def has_permission(self, info, **kwargs) -> bool:
-        user = info.context.current_user or getattr(info.context, "identity", None)
-        return user is not None and getattr(user, "role", None) == "admin"
-```
-
-## `BasePermissionResolver`
-
-`BasePermissionResolver` is an ABC for services that map an operation name (plus
-input data) to a list of permission objects — e.g. per-mutation permission
-resolution stored in a single place:
-
-```python
-from strawberry_alchemy.permissions import BasePermissionResolver
-
-
-class MyPermissionResolver(BasePermissionResolver):
-    def resolve(self, operation: str, *, data: dict | None = None, **kwargs):
-        if operation == "delete_post":
-            return [IsAuthenticated(), OwnerPermission(owner_field="user_id")]
-        return [IsAuthenticated()]
-```
-
-## Mutation helper
-
-`prepare_mutation_resources` parses GlobalIDs, runs loaders, and checks a permission
-list in one call:
-
-```python
-from strawberry_alchemy import IsAuthenticated, OwnerPermission, prepare_mutation_resources
-
-bag = await prepare_mutation_resources(
+await prepare_mutation_resources(
     info,
     {"post_id": input.id},
     loaders={"post_id": lambda value: repo.get_by_id(value)},
@@ -164,19 +66,42 @@ bag = await prepare_mutation_resources(
         OwnerPermission(owner_field="user_id", resource_key="post_id"),
     ],
 )
-post = bag.get("post_id")
+```
+
+Optional `id_fields=` overrides which keys are treated as IDs (default: keys
+ending with `_id`).
+
+### Lower-level pieces
+
+| Helper | Role |
+|---|---|
+| `extract_global_ids_from_info(data, id_fields=None)` | `GlobalID` / strings → UUIDs |
+| `map_ids_to_models(ids, loaders, bag=None)` | Fill a `ResourceInstances` bag |
+| `fetch_and_check_permissions(info, permissions, resource_instances=None)` | Run checks; raise on deny |
+| `ResourceInstances` | `add` / `add_list` / `get` / `get_id` / `all` |
+
+## `BasePermissionResolver`
+
+ABC for apps that map an operation name (+ data) to a list of permission
+objects:
+
+```python
+class PostPermissionResolver(BasePermissionResolver):
+    def resolve(self, operation: str, *, data=None, **kwargs):
+        if operation == "delete":
+            return [IsAuthenticated(), OwnerPermission(resource_key="post_id")]
+        return [IsAuthenticated()]
 ```
 
 ## Protocols
 
-Typing-only protocols are exported for context/user contracts:
-`HasId`, `IdentityLike` (`id` only — stable identity contract), `UserLike` (id + role),
-`PermissionContextLike` (current_user / identity), and `ModelRegistryLike`. Context
-objects may satisfy these protocols structurally — no inheritance required.
+| Protocol | Shape |
+|---|---|
+| `HasId` | `.id` |
+| `IdentityLike` | `.id` |
+| `UserLike` | `.id`, `.role` |
+| `PermissionContextLike` | `.current_user`, `.identity` |
+| `ModelRegistryLike` | `.get_model(label)` |
 
-## Which user is used?
-
-Permission classes read `info.context.current_user` first, then
-`info.context.identity`. Access filters inside the optimizer use `identity` then
-`user`. All four forms work: plain attribute, `@property`, or awaitable (the value is
-awaited when necessary).
+These exist so permission helpers stay typed without depending on your User
+model class.

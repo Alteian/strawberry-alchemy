@@ -19,7 +19,7 @@
 
 **Source Code**: [https://github.com/Alteian/strawberry-alchemy](https://github.com/Alteian/strawberry-alchemy)
 
-**Documentation**: [docs/index.md](docs/index.md) · [API reference](docs/api-reference.md)
+**Documentation**: [https://alteian.github.io/strawberry-alchemy/](https://alteian.github.io/strawberry-alchemy/) · [docs/](docs/index.md)
 
 ---
 
@@ -27,17 +27,16 @@
 
 strawberry-alchemy turns Strawberry GraphQL selection sets into a single optimized
 SQLAlchemy query — automatic `selectinload` for relationships, column deferral, and
-SQL `EXISTS`/`COUNT` annotations — and ships the supporting cast: filter inputs,
-Relay pagination, CRUD repositories, row-level security, permissions, and mapping
-helpers.
+SQL `EXISTS`/`COUNT`/ancestry annotations — and ships filters, Relay pagination,
+CRUD repositories, row-level ACL, permissions helpers, and mapping utilities.
 
-- No N+1 queries: nested selections become eager loads automatically
-- Unrequested columns are deferred — you only fetch what the client asked for
-- Declarative computed fields (`hasComments`, counts, ancestry CTEs) via `@optimize_field`
-- `AND`/`OR` filters, relationship joins, custom filters, and Postgres JSONB lookups
+- No N+1: nested selections become eager loads
+- Unrequested columns are deferred
+- Declarative computed fields via `@optimize_field`
+- `AND`/`OR` filters, relation joins, custom filters, Postgres JSONB lookups
 - Relay `Connection` pagination with `totalCount`
-- Async repositories with deletion reports, cascade hooks, and optional soft-delete
-- Row-level `AccessControlFilter` on root queries / `totalCount`, plus Postgres RLS session GUCs
+- Async repositories with deletion reports, cascade hooks, optional soft-delete
+- Row-level `AccessControlFilter` (+ per-edge `RelationAccessFilter`) and optional Postgres RLS GUCs
 
 ## Installation
 
@@ -53,27 +52,10 @@ Requires Python `>= 3.13`, Strawberry GraphQL `>= 0.339.1`,
 ## Quick example
 
 ```python
-# models.py
-import uuid
-
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from strawberry_alchemy.models import Base
-
-
-class Post(Base):
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user.id"))
-    title: Mapped[str]
-    body: Mapped[str]
-```
-
-```python
 # access_filters.py
 from typing import Any
 from models import Post
-from strawberry_alchemy.filtering import AccessControlFilter
+from strawberry_alchemy import AccessControlFilter
 
 
 class PostAccessFilter(AccessControlFilter):
@@ -89,6 +71,7 @@ class PostAccessFilter(AccessControlFilter):
 import strawberry
 from typing import ClassVar
 from strawberry_alchemy import BaseNodeType
+from access_filters import PostAccessFilter
 
 
 @strawberry.type
@@ -104,6 +87,7 @@ class PostType(BaseNodeType):
 import strawberry
 from strawberry.types import Info
 from strawberry_alchemy import ListResult
+from types import PostType
 
 
 @strawberry.type
@@ -113,52 +97,32 @@ class Query:
         return await PostType.resolve_list(info=info, limit=limit)
 ```
 
-```python
-# schema.py
-import strawberry
-from strawberry.schema.config import StrawberryConfig
-
-schema = strawberry.Schema(
-    query=Query,
-    config=StrawberryConfig(auto_camel_case=True, relay_max_results=100),
-)
-```
-
-```graphql
-query {
-  posts(limit: 10) {
-    items { id title body }
-    totalCount
-  }
-}
-```
-
-Your request context needs three things: `get_session()`, an `identity`/`user`
-attribute, and a `db_execution_lock` (see
-[docs/getting-started.md#context-contract](docs/getting-started.md)).
+Your request context needs `get_session()`, an `identity` / `user`, and a
+`db_execution_lock` — see
+[Context contract](docs/getting-started.md#context-contract).
 
 ## Documentation
 
 | Page | Topic |
 |---|---|
-| [docs/index.md](docs/index.md) | Overview, features, architecture |
-| [docs/getting-started.md](docs/getting-started.md) | Full walkthrough: models, types, filters, queries, mutations |
-| [docs/types-and-models.md](docs/types-and-models.md) | `Base`, `BaseNodeType`, `ListResult`, connections, ordering |
-| [docs/queries.md](docs/queries.md) | `resolve_node` / `resolve_list` / `resolve_connection`, pagination |
-| [docs/query-optimizer.md](docs/query-optimizer.md) | Load strategies, `@optimize_field` hints, `QueryAnalyzer` |
-| [docs/filtering.md](docs/filtering.md) | Filter inputs, operators, `AND`/`OR`, custom & access-control filters |
-| [docs/repository.md](docs/repository.md) | CRUD, soft-delete, deletion reports / handlers |
-| [docs/mapping-and-schema.md](docs/mapping-and-schema.md) | `BaseSchema`, SQLAlchemy → Strawberry mapping |
-| [docs/permissions.md](docs/permissions.md) | Permission classes, resource checks |
-| [docs/postgres-rls.md](docs/postgres-rls.md) | Session GUC helpers for app-owned RLS policies |
-| [docs/api-reference.md](docs/api-reference.md) | Every public export with signatures |
+| [docs/index.md](docs/index.md) | Overview and architecture |
+| [docs/getting-started.md](docs/getting-started.md) | Full walkthrough |
+| [docs/types-and-models.md](docs/types-and-models.md) | `Base`, `BaseNodeType`, connections |
+| [docs/queries.md](docs/queries.md) | `resolve_*`, pagination, ordering |
+| [docs/filtering.md](docs/filtering.md) | Filters, ACL, `RelationAccessFilter` |
+| [docs/query-optimizer.md](docs/query-optimizer.md) | Hints, analyzer, custom order |
+| [docs/mapping-and-schema.md](docs/mapping-and-schema.md) | `BaseSchema`, `schema_from_input` |
+| [docs/repository.md](docs/repository.md) | CRUD, soft-delete, deletion handlers |
+| [docs/permissions.md](docs/permissions.md) | Permission helpers for mutations |
+| [docs/postgres-rls.md](docs/postgres-rls.md) | Session GUC helpers |
+| [docs/recipes.md](docs/recipes.md) | Production wrapping patterns |
+| [docs/api-reference.md](docs/api-reference.md) | Public exports |
 
 ## Example
 
-A runnable blog sketch covering core patterns (models, ACL, `OR` filters,
-`@optimize_field`, ClassVar repositories, deletion handler) lives in
-[`examples/blog`](examples/blog). It is a focused walkthrough — not every 0.3/0.4
-API (ancestry, soft-delete, JSONB, RLS) is demonstrated there yet.
+Runnable core patterns (ACL, `OR` filters, `@optimize_field`, ClassVar repos,
+deletion handler, soft-delete, `prepare_mutation_resources`) live in
+[`examples/blog`](examples/blog).
 
 ```bash
 make test ARGS="tests/examples"
@@ -166,26 +130,18 @@ make test ARGS="tests/examples"
 
 ## Development
 
-Tool versions are pinned in [`mise.toml`](mise.toml) (same pins CI uses via
-[`jdx/mise-action`](https://github.com/jdx/mise-action)). Tasks stay in Make.
+Tool versions are pinned in [`mise.toml`](mise.toml) (same pins CI uses). Tasks
+stay in Make.
 
 ```bash
 git clone https://github.com/Alteian/strawberry-alchemy.git
 cd strawberry-alchemy
-# https://mise.jdx.dev — then:
 mise install
-make sync
-make doctor
-
-# Lint, typecheck, test, build (same Make targets CI runs)
+make sync && make doctor
 make ci
 ```
 
-See [docs/roadmap.md](docs/roadmap.md) for planned work. See `make help` for targets.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Docs: `make docs` / `make docs-serve`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

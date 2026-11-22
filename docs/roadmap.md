@@ -1,20 +1,28 @@
 # Roadmap
 
-## Done in 0.2.0–0.5.0
+## Done (through 0.7.x)
 
-See [CHANGELOG](https://github.com/Alteian/strawberry-alchemy/blob/master/CHANGELOG.md) for the full history. Highlights:
+See [CHANGELOG](https://github.com/Alteian/strawberry-alchemy/blob/master/CHANGELOG.md)
+for the full history. Highlights:
 
-- **0.2.x** — dep floors, OR/AND semantics, typed selection, blog example, mypy hard gate,
-  per-call `access_filter`, QueryAnalyzer timing.
-- **0.3.0** — `AnnotateAncestry`, `DeletionReport` / `strict`, soft-delete helpers, JSONB lookups.
-- **0.4.0** — Postgres RLS session GUC helpers.
-- **0.5.0** — nested relation ACL on `selectinload`, maxxus-shaped JSONB key filters + selection
-  trim, real Postgres CI, `prepare_mutation_resources`, GlobalID encode registry, coverage gate,
-  MkDocs, QueryAnalyzer `on_report` hook, docs honesty.
+- **0.2.x** — OR/AND semantics, typed selection, blog example, per-call
+  `access_filter`, QueryAnalyzer timing, `CUSTOM_FILTERS`
+- **0.3.0** — `AnnotateAncestry`, `DeletionReport` / `strict`, soft-delete helpers,
+  JSONB operators
+- **0.4.0** — Postgres RLS session GUC helpers
+- **0.5.x** — nested relation ACL, JSONB key filters + selection trim, Postgres CI,
+  `prepare_mutation_resources`, GlobalID encode registry, MkDocs,
+  QueryAnalyzer `on_report`, nested schema→type conversion
+- **0.6.0** — `BaseSchema.from_input` / `schema_from_input`
+- **0.7.x** — `RelationAccessFilter` (+ `foreign_key=`), `PrefetchRelated.access_filter`,
+  `DateFilter`, FilterBuilder boolean/`isnull` coercion fix
 
 ## Later
 
-- Published docs site hosting (GitHub Pages / Read the Docs) from the MkDocs build.
-- Broader mutation helper ergonomics (resolver integration beyond `prepare_mutation_resources`).
-- Optional OpenTelemetry auto-instrumentation beyond the `on_report` callback.
-- More Relay cursor edge-case and permissions mutation e2e coverage as consumers surface gaps.
+- Broader mutation helper ergonomics (resolver integration beyond
+  `prepare_mutation_resources`)
+- Optional OpenTelemetry auto-instrumentation beyond the `on_report` callback
+- More Relay cursor edge-case and permissions mutation e2e coverage as consumers
+  surface gaps
+- CI job to deploy MkDocs to GitHub Pages on release (manual `mkdocs gh-deploy`
+  works today)

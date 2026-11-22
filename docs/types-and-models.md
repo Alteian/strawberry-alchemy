@@ -1,233 +1,121 @@
-# Types & Models
+# Types and models
 
-This page covers the SQLAlchemy model base, the `BaseNodeType` GraphQL type, and the
-pagination/result wrapper types.
+## `Base` (SQLAlchemy)
 
-## The `Base` model
+`strawberry_alchemy.models.Base` is an abstract declarative base aimed at Postgres:
 
-`strawberry_alchemy.models.Base` is a `DeclarativeBase` for PostgreSQL with a UUID
-primary key, `created_at` / `updated_at` timestamps, and automatic snake_case table
-naming.
+- UUID primary key (`sqlalchemy.dialects.postgresql.UUID`)
+- `created_at` / `updated_at` (`DateTime(timezone=True)` with server defaults)
+- Automatic `__tablename__` from the class name (`Post` → `post`)
 
 ```python
-# models.py
-import uuid
-
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from strawberry_alchemy.models import Base
+from strawberry_alchemy import Base
 
 
 class Post(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("user.id"))
-    title: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str]
     body: Mapped[str]
-
-    comments: Mapped[list["Comment"]] = relationship(back_populates="post")
 ```
 
-What `Base` provides for you:
+!!! note "Non-Postgres databases"
+    For SQLite (tests) or other dialects, define your own `DeclarativeBase` with
+    `sqlalchemy.Uuid` (or equivalent) and the same column names. The blog example
+    does this. GraphQL types and the optimizer only require those columns to exist
+    on the mapped class — they do not require library `Base`.
 
-- `id` — `UUID(as_uuid=True)` primary key with `default=uuid.uuid4` and an index
-- `created_at`, `updated_at` — `DateTime(timezone=True)` with server-side `now()`
-  defaults; `updated_at` also has `onupdate=func.now()`
-- `__tablename__` — derived from the class name: `Post` → `post`,
-  `PostComment` → `post_comment`
+## `SoftDeleteMixin`
 
-> Note: the base is PostgreSQL-specific (it imports `sqlalchemy.dialects.postgresql.UUID`).
-> For SQLite or other dialects, define your own base using `sqlalchemy.Uuid` — the rest
-> of the library does not depend on `Base`; any declarative model works.
+Adds a nullable, indexed `deleted_at` column. Pair it with
+`BaseRepository.soft_delete_field = "deleted_at"` so `get_by_id` / list queries
+exclude soft-deleted rows by default and `soft_delete()` works.
+
+```python
+from strawberry_alchemy import SoftDeleteMixin
+
+class Post(SoftDeleteMixin, Base):
+    ...
+```
 
 ## `BaseNodeType`
 
-`BaseNodeType` is a Strawberry Relay `Node` with `id: NodeID[uuid.UUID]` plus
-`created_at` / `updated_at`. Subclass it for every type that is resolved through the
-optimizer.
+Relay `Node` GraphQL type that owns the read path into the optimizer.
+
+**Built-in fields:** `id` (`NodeID[UUID]`), `created_at`, `updated_at` (default
+`strawberry.UNSET`).
+
+**Required ClassVar**
+
+| ClassVar | Purpose |
+|---|---|
+| `access_filter` | `AccessControlFilter` subclass (or instance) — sets `model_class` |
+
+**Optional ClassVars**
+
+| ClassVar | Purpose |
+|---|---|
+| `CUSTOM_FILTERS` | `dict[str, Callable]` — non-column filter keys → SQL clause builders |
+| `model_class` | Filled from `access_filter.model_class` |
+
+Declare selected columns and relationships as Strawberry fields defaulting to
+`UNSET`. Nested types often use `strawberry.lazy` to break cycles.
 
 ```python
-# types.py
-import uuid
-from typing import Annotated, ClassVar
-
-import strawberry
-
-from access_filters import PostAccessFilter
-from strawberry_alchemy import BaseNodeType
-
-
 @strawberry.type
 class PostType(BaseNodeType):
     access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
 
-    user_id: uuid.UUID | None = strawberry.UNSET
     title: str | None = strawberry.UNSET
-    body: str | None = strawberry.UNSET
-    comments: list[Annotated["CommentType", strawberry.lazy(".types")]] | None = strawberry.UNSET
+    comments: list[CommentType] | None = strawberry.UNSET
 ```
 
-### Rules and conventions
+### Construction helpers
 
-- **`access_filter` is required.** Every subclass must declare an `access_filter`
-  `ClassVar` pointing at an `AccessControlFilter` **subclass** (preferred).
-  Instances still work for backwards compatibility because `apply_filter` is a
-  staticmethod. `model_class` is derived from `access_filter.model_class`
-  automatically; you can also declare `model_class` explicitly. Pass
-  `access_filter=` to `resolve_node` / `resolve_nodes` / `resolve_list` /
-  `resolve_connection` to override the ClassVar for a single call.
-- **Scalar fields default to `strawberry.UNSET`.** This lets the optimizer defer
-  columns the client did not request and lets `from_schema` distinguish
-  "not provided" from `None`. Fields that are nullable (`| None`) or temporal
-  (`datetime`, `date`, `time`) are automatically normalized from `UNSET` to `None`
-  in `__post_init__` and `from_schema`.
-- **Relationship fields** point to other `BaseNodeType` subclasses. Use
-  `strawberry.lazy` to avoid circular imports; the optimizer resolves nested load
-  strategies and the mapper walks the selected field tree.
-- **Naming convention:** the mapper resolves GraphQL types from model class names by
-  convention `<ModelName>Type` (e.g. `Post` → `PostType`), also matching camelCase
-  `*_id` columns to `GlobalID` fields (see [Mapping](mapping-and-schema.md)).
+- `PostType.from_schema(schema, **overrides)` — build from a `BaseSchema` /
+  Pydantic model (nested schemas become related Strawberry types).
+- Schema side: `schema.to_type(PostType)` prefers `from_schema` when available.
 
-### Building types from schemas: `from_schema`
+### Resolve classmethods
 
-`from_schema` converts a Pydantic schema (typically from `BaseRepository` or your
-service layer) into the GraphQL type. Extra keyword arguments override schema values,
-which is how you inject computed fields like localized variants or GlobalID-encoded
-foreign keys.
-
-```python
-from repositories import PostSchema
-from types import PostType
-
-schema = PostSchema(id=..., title="Hello", body="...", user_id=...)
-gql_type = PostType.from_schema(schema)                       # plain mapping
-gql_type = PostType.from_schema(schema, title="Overridden")   # kwargs win
-gql_type = PostType.from_schema(schema, exclude={"body"})     # skip fields
-```
-
-Under the hood it dumps the schema with `exclude_unset=True`, keeps only attributes
-matching the type's `__init__` parameters, applies your kwargs, converts nested
-Pydantic/`BaseSchema` values (and lists of them) into the related Strawberry types
-when the GraphQL field is a Strawberry object — including fields wrapped in
-`T | None`, `list[...]`, `Annotated`, and `strawberry.lazy` — coerces `UNSET` →
-`None` for nullable/temporal fields, and constructs the instance. Explicit kwargs
-still win; `exclude=` omits those fields. JSON/`dict` scalar fields are left alone.
-If both sides of a loaded relation form a cycle, the cyclic back-reference becomes
-`None` so conversion cannot recurse forever. This is also what `BaseSchema.to_type()`
-calls.
-
-### Direct construction
-
-You can construct types directly — useful in mutations where you already hold the
-ORM instance. UNSET scalars are normalized to `None` for nullable/temporal fields.
-
-```python
-gql_type = PostType(
-    id=db_obj.id,
-    title=db_obj.title,
-    body=db_obj.body,
-    user_id=db_obj.user_id,
-    comments=[...],
-    created_at=db_obj.created_at,
-    updated_at=db_obj.updated_at,
-)
-```
+See [Queries](queries.md) for `resolve_node`, `resolve_nodes`, `resolve_list`,
+and `resolve_connection`.
 
 ## `ListResult`
 
-`ListResult[T]` is the plain list-pagination wrapper: `items` plus `total_count`.
-Use it for offset/limit list queries; use `OptimizedListConnection` for Relay
-cursor pagination.
+Offset/limit list wrapper:
 
 ```python
-import strawberry
-
-from strawberry_alchemy import ListResult
-
 @strawberry.type
-class Queries:
-    @strawberry.field
-    async def posts(self, info, limit: int | None = None, offset: int | None = None) -> ListResult[PostType]:
-        return await PostType.resolve_list(info=info, limit=limit, offset=offset)
+class ListResult[T]:
+    items: list[T]
+    total_count: int | None = strawberry.UNSET
 ```
 
-GraphQL shape:
+Returned by `BaseNodeType.resolve_list`.
 
-```graphql
-{
-  posts(limit: 10) {
-    items { id title }
-    totalCount
-  }
-}
-```
+## Relay connection types
 
-## `OptimizedListConnection`
+| Symbol | Role |
+|---|---|
+| `OptimizedListConnection[NodeType]` | Connection with `edges`, `page_info`, `total_count` |
+| `Edge` / `PageInfo` | Re-exported from `strawberry.relay` |
+| `SliceMetadata` | Cursor / first / last → start / end / `fetch_limit` math |
 
-`OptimizedListConnection[NodeType]` is a Relay `Connection` with `edges`,
-`page_info`, and `total_count`, implementing the cursor slicing (`first` / `last` /
-`after` / `before`) against the optimized query. You normally do not construct it
-directly — return it from `BaseNodeType.resolve_connection`.
+`resolve_connection` on `BaseNodeType` delegates to
+`OptimizedListConnection.resolve_connection`, which uses the same optimizer path
+as lists.
+
+## `Ordering`
 
 ```python
-from strawberry_alchemy import OptimizedListConnection
-
-@strawberry.type
-class Queries:
-    @strawberry.field
-    async def posts(
-        self,
-        info,
-        first: int | None = None,
-        after: str | None = None,
-        last: int | None = None,
-        before: str | None = None,
-    ) -> OptimizedListConnection[PostType]:
-        return await PostType.resolve_connection(
-            info=info, first=first, after=after, last=last, before=before
-        )
+from strawberry_alchemy import Ordering  # enum: ASC, DESC
 ```
 
-GraphQL shape:
-
-```graphql
-{
-  posts(first: 2) {
-    edges {
-      cursor
-      node { id title }
-    }
-    pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
-    totalCount
-  }
-}
-```
-
-Details:
-
-- Cursors are base64 `arrayconnection:<index>` offsets — the same format Strawberry
-  Relay uses, so `first`/`after` round-trips work.
-- `first` / `last` are validated against `info.schema.config.relay_max_results`.
-- `SliceMetadata` is exported for callers that want to compute the slice arguments
-  themselves (`SliceMetadata.from_arguments(info, before, after, first, last, max_results)`).
-- The one extra row (`requested_count + 1`) is fetched internally to compute
-  `has_next_page` / `has_previous_page` without a second query.
-
-## `Ordering` enum
-
-`Ordering` is a Strawberry enum (`ASC` / `DESC`) used inside order input types:
-
-```python
-import strawberry
-
-from strawberry_alchemy.enums import Ordering
-
-
-@strawberry.input
-class PostOrder:
-    created_at: Ordering | None = strawberry.UNSET
-    title: Ordering | None = strawberry.UNSET
-    updated_at: Ordering | None = strawberry.UNSET
-```
-
-Pass it to any resolver that accepts `order=` (see [Queries](queries.md#ordering)).
+Pass order inputs through to `resolve_list` / `resolve_connection` /
+`QueryOptimizer.optimize_query` as your app's order input shape; the optimizer
+maps known model columns (and subclasses can override `process_order` — see
+[Recipes](recipes.md#custom-order-columns)).
