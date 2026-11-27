@@ -58,7 +58,7 @@ Relay `Node` GraphQL type that owns the read path into the optimizer.
 
 | ClassVar | Purpose |
 |---|---|
-| `config` | `NodeConfig` — nested to-many caps (`max_items`, per-field `fields`) |
+| `node_config` | `NodeConfig` — nested to-many caps (`max_items`, per-field `fields`) |
 | `CUSTOM_FILTERS` | `dict[str, Callable]` — non-column filter keys → SQL clause builders |
 | `model_class` | Filled from `access_filter.model_class` |
 
@@ -73,9 +73,11 @@ from strawberry_alchemy import MaxItems, NestedListResult, NodeConfig
 @strawberry.type
 class PostType(BaseNodeType):
     access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
-    config: ClassVar[NodeConfig] = NodeConfig(max_items=50, fields={"tags": None})
+    node_config: ClassVar[NodeConfig] = NodeConfig(max_items=50, fields={"tags": None})
 
     title: str | None = strawberry.UNSET
+    # Domain payload named ``config`` is fine — knobs live on ``node_config``.
+    config: dict[str, object] | None = strawberry.UNSET
     comments: NestedListResult[CommentType] | None = strawberry.UNSET
     tags: NestedListResult[TagType] | None = strawberry.field(
         default=strawberry.UNSET,
@@ -83,10 +85,10 @@ class PostType(BaseNodeType):
     )
 ```
 
-Cap resolution (highest wins): `MaxItems` → `config.fields[name]` →
-`config.max_items` → `100`. Pass `None` for unlimited. App-wide default:
-`BaseNodeType.config = NodeConfig(max_items=50)` at import time, or subclass
-once.
+Cap resolution (highest wins): `MaxItems` → `node_config.fields[name]` →
+`node_config.max_items` → `100`. Pass `None` for unlimited. App-wide default:
+`BaseNodeType.node_config = NodeConfig(max_items=50)` at import time, or
+subclass once.
 
 These caps apply only to **nested selectin** loads. Top-level Relay connections
 use `first` / `last` + `StrawberryConfig(relay_max_results=…)` instead — see

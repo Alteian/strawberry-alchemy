@@ -37,7 +37,7 @@ print(strawberry_alchemy.__version__)
 ### `BaseNodeType` ClassVars
 
 - `access_filter` (required)
-- `config: NodeConfig = NodeConfig()` (default nested list cap 100)
+- `node_config: NodeConfig = NodeConfig()` (default nested list cap 100)
 - `CUSTOM_FILTERS: dict[str, Callable] = {}`
 - `model_class` (from access filter)
 

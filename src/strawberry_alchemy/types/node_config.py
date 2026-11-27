@@ -25,6 +25,11 @@ class NodeConfig:
     ``max_items`` caps each to-many relationship on this type (per parent row).
     ``fields`` overrides that default per relationship attribute name.
     ``None`` means unlimited.
+
+    Attach via ``node_config: ClassVar[NodeConfig] = NodeConfig(...)`` on the
+    type (or assign ``BaseNodeType.node_config = …`` app-wide). Named
+    ``node_config`` (not ``config``) so domain GraphQL / ORM fields may use
+    ``config`` for payload data — same idea as Pydantic's ``model_config``.
     """
 
     max_items: int | None = DEFAULT_MAX_ITEMS
@@ -58,6 +63,12 @@ def _max_items_extension_for_field(strawberry_type: type[Any], field_name: str) 
 _MISSING = object()
 
 
+def lookup_node_config(strawberry_type: type[Any]) -> NodeConfig | None:
+    """Return ``strawberry_type.node_config`` when it is a ``NodeConfig``."""
+    value = getattr(strawberry_type, "node_config", None)
+    return value if isinstance(value, NodeConfig) else None
+
+
 def resolve_max_items(
     strawberry_type: type[Any] | None,
     field_name: str,
@@ -80,13 +91,13 @@ def resolve_max_items(
         if ext_value is not _MISSING:
             return cast("int | None", ext_value)
 
-        config = getattr(strawberry_type, "config", None)
-        if isinstance(config, NodeConfig):
-            if field_name in config.fields:
-                return config.fields[field_name]
+        node_config = lookup_node_config(strawberry_type)
+        if node_config is not None:
+            if field_name in node_config.fields:
+                return node_config.fields[field_name]
             snake = camel_to_snake(field_name)
-            if isinstance(snake, str) and snake in config.fields:
-                return config.fields[snake]
-            return config.max_items
+            if isinstance(snake, str) and snake in node_config.fields:
+                return node_config.fields[snake]
+            return node_config.max_items
 
     return DEFAULT_MAX_ITEMS
