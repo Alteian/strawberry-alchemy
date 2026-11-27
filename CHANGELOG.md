@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window so `NestedListResult.has_more` reflects authorized rows, not a
   pre-ACL slice.
 
+### Docs
+
+- Clarify that Relay connections are capped via `relay_max_results` /
+  `first` / `last`, not `NodeConfig` (pagination notes + types / optimizer).
+
 ## [0.7.3] — 2026-11-22
 
 ### Added

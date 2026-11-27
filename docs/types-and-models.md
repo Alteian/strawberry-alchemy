@@ -86,8 +86,13 @@ class PostType(BaseNodeType):
 Cap resolution (highest wins): `MaxItems` → `config.fields[name]` →
 `config.max_items` → `100`. Pass `None` for unlimited. App-wide default:
 `BaseNodeType.config = NodeConfig(max_items=50)` at import time, or subclass
-once. Many-to-many (`secondary=`) collections are not capped; use Relay /
-`resolve_list` for large pages.
+once.
+
+These caps apply only to **nested selectin** loads. Top-level Relay connections
+use `first` / `last` + `StrawberryConfig(relay_max_results=…)` instead — see
+[Queries: Pagination notes](queries.md#pagination-notes). Many-to-many
+(`secondary=`) nested edges are not capped; expose them as a connection field
+or filtered prefetch when the association can grow large.
 
 ### Construction helpers
 
@@ -136,7 +141,8 @@ GraphQL selection: `comments { items { … } hasMore }`.
 
 `resolve_connection` on `BaseNodeType` delegates to
 `OptimizedListConnection.resolve_connection`, which uses the same optimizer path
-as lists.
+as lists for loading, but page size is controlled by Relay args /
+`relay_max_results` — not `NodeConfig`.
 
 ## `Ordering`
 
