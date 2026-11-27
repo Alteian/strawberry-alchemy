@@ -28,6 +28,8 @@ print(strawberry_alchemy.__version__)
 |---|---|
 | `BaseNodeType` | Relay `Node` + ClassVar ACL; `resolve_node(s)` / `resolve_list` / `resolve_connection` / `from_schema` |
 | `ListResult[T]` | `{items, total_count}` list wrapper |
+| `NestedListResult[T]` | `{items, has_more}` capped nested to-many wrapper |
+| `NodeConfig` | `max_items` + per-field `fields` map for nested selectin caps |
 | `OptimizedListConnection[T]` | Relay connection + `total_count` |
 | `Edge` / `PageInfo` | Re-exports from `strawberry.relay` |
 | `SliceMetadata` | Cursor/first/last → start/end/`fetch_limit` |
@@ -35,6 +37,7 @@ print(strawberry_alchemy.__version__)
 ### `BaseNodeType` ClassVars
 
 - `access_filter` (required)
+- `config: NodeConfig = NodeConfig()` (default nested list cap 100)
 - `CUSTOM_FILTERS: dict[str, Callable] = {}`
 - `model_class` (from access filter)
 
@@ -56,7 +59,7 @@ Type.from_schema(schema, **kwargs) -> Type
 | `QueryResult` | Frozen `{items, selected_fields, total_count}` |
 | `QueryAnalyzer` | Per-query diagnostics; env `QUERY_ANALYZER_ENABLED`; `on_report=` hook |
 | `optimize_field` | Decorator attaching optimizer hints to computed fields |
-| `PrefetchRelated` | `(relationship, fields=None, filter_current_user=False, filter=None, access_filter=None)` |
+| `PrefetchRelated` | `(relationship, fields=None, filter_current_user=False, filter=None, access_filter=None, max_items=unset)` |
 | `SelectColumns` | `(*fields: str)` — undefer same-row scalars |
 | `AnnotateExists` | Correlated EXISTS → bool attr |
 | `AnnotateAnyExists` | OR of EXISTS over relationships |
@@ -99,6 +102,7 @@ await optimizer.optimize_query(
 |---|---|
 | `AccessControlFilter` | Base for model-keyed row ACL (`*AccessFilter` name enforced) |
 | `RelationAccessFilter` | `FieldExtension`: edge-local ACL; optional `foreign_key=` |
+| `MaxItems` | `FieldExtension`: per-edge nested to-many cap (`None` = unlimited) |
 | `FilterBuilder` | Filter inputs / dicts → SQL WHERE |
 | `FilterOperators` | Lookup → SQLAlchemy operator registry |
 | `IDFilter` | `exact`, `in_`, `not_in_`, `isnull` |
@@ -112,6 +116,7 @@ await optimizer.optimize_query(
 
 ```python
 RelationAccessFilter(access_filter, *, foreign_key: str | None = None)
+MaxItems(max_items: int | None)  # None = unlimited
 ```
 
 ## Mapping

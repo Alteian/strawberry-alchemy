@@ -20,6 +20,7 @@ from strawberry_alchemy.optimizer import QueryOptimizer
 
 from .connection import OptimizedListConnection
 from .list_result import ListResult
+from .node_config import NodeConfig
 
 
 @strawberry.type
@@ -30,7 +31,7 @@ class BaseNodeType(Node):
 
     access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]
     model_class: ClassVar[type[Any]]
-    max_items: ClassVar[int] = 100
+    config: ClassVar[NodeConfig] = NodeConfig()
     CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {}
     _custom_filters_registry: ClassVar[dict[type[Any], dict[str, Callable[..., Any]]]] = {}
 

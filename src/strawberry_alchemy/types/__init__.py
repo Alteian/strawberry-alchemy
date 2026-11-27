@@ -5,12 +5,15 @@ from strawberry_alchemy.types.connection import (
     PageInfo,
     SliceMetadata,
 )
-from strawberry_alchemy.types.list_result import ListResult
+from strawberry_alchemy.types.list_result import ListResult, NestedListResult
+from strawberry_alchemy.types.node_config import NodeConfig
 
 __all__ = (
     "BaseNodeType",
     "Edge",
     "ListResult",
+    "NestedListResult",
+    "NodeConfig",
     "OptimizedListConnection",
     "PageInfo",
     "SliceMetadata",

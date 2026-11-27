@@ -1,4 +1,4 @@
-from .access_control import AccessControlFilter, RelationAccessFilter
+from .access_control import AccessControlFilter, MaxItems, RelationAccessFilter
 from .filter_builder import FilterBuilder
 from .inputs import (
     BooleanFilter,
@@ -23,6 +23,7 @@ __all__ = (
     "IDFilter",
     "IntFilter",
     "JSONFilter",
+    "MaxItems",
     "RelationAccessFilter",
     "StringFilter",
 )

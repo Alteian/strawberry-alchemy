@@ -177,7 +177,7 @@ import strawberry
 from sqlalchemy import or_
 from strawberry.types import Info
 
-from strawberry_alchemy import AnnotateExists, BaseNodeType, optimize_field
+from strawberry_alchemy import AnnotateExists, BaseNodeType, NestedListResult, optimize_field
 
 from .access_filters import CommentAccessFilter, PostAccessFilter
 
@@ -206,7 +206,9 @@ class PostType(BaseNodeType):
     user_id: uuid.UUID | None = strawberry.UNSET
     title: str | None = strawberry.UNSET
     body: str | None = strawberry.UNSET
-    comments: list[Annotated[CommentType, strawberry.lazy(".types")]] | None = strawberry.UNSET
+    comments: (
+        NestedListResult[Annotated[CommentType, strawberry.lazy(".types")]] | None
+    ) = strawberry.UNSET
 
     @strawberry.field
     @optimize_field(AnnotateExists("comments"))

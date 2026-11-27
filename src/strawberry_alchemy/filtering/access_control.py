@@ -71,6 +71,20 @@ def _related_node_type(info: Info) -> Any | None:
     return None
 
 
+class MaxItems(FieldExtension):
+    """Per-field cap for nested to-many ``selectinload`` (edge-local).
+
+    Wins over ``NodeConfig.fields`` / ``NodeConfig.max_items``. Pass ``None`` for
+    unlimited on this edge. The optimizer fetches ``max_items + 1`` so mapping can
+    set ``NestedListResult.has_more``.
+    """
+
+    def __init__(self, max_items: int | None) -> None:
+        if max_items is not None and max_items <= 0:
+            raise ValueError(f"max_items must be None (unlimited) or a positive int, got {max_items!r}")
+        self.max_items = max_items
+
+
 class RelationAccessFilter(FieldExtension):
     """Per-relationship ACL override for nested ``selectinload`` (edge-local).
 

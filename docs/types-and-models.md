@@ -58,20 +58,36 @@ Relay `Node` GraphQL type that owns the read path into the optimizer.
 
 | ClassVar | Purpose |
 |---|---|
+| `config` | `NodeConfig` — nested to-many caps (`max_items`, per-field `fields`) |
 | `CUSTOM_FILTERS` | `dict[str, Callable]` — non-column filter keys → SQL clause builders |
 | `model_class` | Filled from `access_filter.model_class` |
 
 Declare selected columns and relationships as Strawberry fields defaulting to
-`UNSET`. Nested types often use `strawberry.lazy` to break cycles.
+`UNSET`. Nested types often use `strawberry.lazy` to break cycles. Prefer
+`NestedListResult` for to-many relations so clients get `hasMore` when the
+default cap (100) truncates.
 
 ```python
+from strawberry_alchemy import MaxItems, NestedListResult, NodeConfig
+
 @strawberry.type
 class PostType(BaseNodeType):
     access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
+    config: ClassVar[NodeConfig] = NodeConfig(max_items=50, fields={"tags": None})
 
     title: str | None = strawberry.UNSET
-    comments: list[CommentType] | None = strawberry.UNSET
+    comments: NestedListResult[CommentType] | None = strawberry.UNSET
+    tags: NestedListResult[TagType] | None = strawberry.field(
+        default=strawberry.UNSET,
+        extensions=[MaxItems(20)],
+    )
 ```
+
+Cap resolution (highest wins): `MaxItems` → `config.fields[name]` →
+`config.max_items` → `100`. Pass `None` for unlimited. App-wide default:
+`BaseNodeType.config = NodeConfig(max_items=50)` at import time, or subclass
+once. Many-to-many (`secondary=`) collections are not capped; use Relay /
+`resolve_list` for large pages.
 
 ### Construction helpers
 
@@ -96,6 +112,19 @@ class ListResult[T]:
 ```
 
 Returned by `BaseNodeType.resolve_list`.
+
+## `NestedListResult`
+
+Capped nested to-many wrapper (selectin loads fetch `max_items + 1`):
+
+```python
+@strawberry.type
+class NestedListResult[T]:
+    items: list[T]
+    has_more: bool = False
+```
+
+GraphQL selection: `comments { items { … } hasMore }`.
 
 ## Relay connection types
 

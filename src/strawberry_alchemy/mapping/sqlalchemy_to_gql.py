@@ -1,9 +1,11 @@
 import asyncio
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_args, get_origin
 
 import strawberry
 from sqlalchemy.inspection import inspect
 from strawberry.relay import GlobalID
+from strawberry.types.base import StrawberryOptional
+from strawberry.types.lazy_type import LazyType
 
 from strawberry_alchemy.mapping.output_normalization import (
     get_type_init_params,
@@ -58,6 +60,61 @@ def create_global_id_from_field(field_name: str, value: Any) -> GlobalID:
     return GlobalID(type_name=type_name, node_id=str(value))
 
 
+def _annotation_is_nested_list_result(annotation: Any) -> bool:
+    from strawberry_alchemy.types.list_result import NestedListResult
+
+    current = annotation
+    while True:
+        if isinstance(current, StrawberryOptional):
+            current = current.of_type
+            continue
+        if isinstance(current, LazyType):
+            current = current.resolve_type()
+            continue
+        origin = get_origin(current)
+        if origin is not None:
+            if origin is NestedListResult or getattr(origin, "__name__", "") == "NestedListResult":
+                return True
+            # Union / | None
+            args = get_args(current)
+            if args:
+                return any(_annotation_is_nested_list_result(arg) for arg in args if arg is not type(None))
+            break
+        if current is NestedListResult or (
+            isinstance(current, type) and getattr(current, "__name__", "") == "NestedListResult"
+        ):
+            return True
+        # Specialized strawberry generic: check definition fields
+        definition = getattr(current, "__strawberry_definition__", None)
+        if definition is not None:
+            names = {f.name for f in definition.fields}
+            if "items" in names and "has_more" in names:
+                return True
+        break
+    return False
+
+
+def _field_uses_nested_list_result(target_type: type[Any], field_name: str) -> bool:
+    definition = getattr(target_type, "__strawberry_definition__", None)
+    if definition is None:
+        annotation = getattr(target_type, "__annotations__", {}).get(field_name)
+        return _annotation_is_nested_list_result(annotation) if annotation is not None else False
+    for field_def in definition.fields:
+        if field_def.name == field_name:
+            return _annotation_is_nested_list_result(field_def.type)
+    annotation = getattr(target_type, "__annotations__", {}).get(field_name)
+    return _annotation_is_nested_list_result(annotation) if annotation is not None else False
+
+
+def _nested_item_selection(nested_fields: FieldSelectionDict) -> FieldSelectionDict:
+    """Unwrap NestedListResult / ListResult ``items { … }`` selection when present."""
+    items = nested_fields.get("items")
+    if isinstance(items, dict):
+        return items
+    # After optimizer extract_model_fields, items is already flattened — drop has_more leaf.
+    return {k: v for k, v in nested_fields.items() if k not in {"has_more", "hasMore"}}
+
+
 async def map_sqlalchemy_to_type[T](
     instance: Any,
     info: strawberry.Info,
@@ -94,30 +151,45 @@ async def map_sqlalchemy_to_type[T](
         if field_name in insp.mapper.relationships:
             nested_raw = selected_fields.get(field_name, {})
             nested_fields: FieldSelectionDict = nested_raw if isinstance(nested_raw, dict) else {}
+            item_fields = _nested_item_selection(nested_fields)
+            wrap_nested = _field_uses_nested_list_result(target_type, field_name)
 
             if isinstance(value, list):
+                mapped_list: list[Any] = []
                 if value:
                     relationship_type = get_graphql_type_from_sqlalchemy(info, value[0])
                     if relationship_type:
                         mapped_items = await asyncio.gather(
                             *(
-                                map_sqlalchemy_to_type(item, info, relationship_type, nested_fields)
+                                map_sqlalchemy_to_type(item, info, relationship_type, item_fields)
                                 for item in value
                                 if item is not None and item is not UNSET
                             )
                         )
-                        type_data[field_name] = [item for item in mapped_items if item is not None]
-                    else:
-                        type_data[field_name] = []
+                        mapped_list = [item for item in mapped_items if item is not None]
+
+                from strawberry_alchemy.types.list_result import NestedListResult
+                from strawberry_alchemy.types.node_config import resolve_max_items
+
+                if wrap_nested:
+                    max_items = resolve_max_items(target_type, field_name)
+                    has_more = False
+                    if max_items is not None and len(mapped_list) > max_items:
+                        has_more = True
+                        mapped_list = mapped_list[:max_items]
+                    type_data[field_name] = NestedListResult(items=mapped_list, has_more=has_more)
                 else:
-                    type_data[field_name] = []
+                    max_items = resolve_max_items(target_type, field_name)
+                    if max_items is not None and len(mapped_list) > max_items:
+                        mapped_list = mapped_list[:max_items]
+                    type_data[field_name] = mapped_list
 
             elif value is None:
                 type_data[field_name] = None
             elif value is not UNSET:
                 relationship_type = get_graphql_type_from_sqlalchemy(info, value)
                 if relationship_type:
-                    mapped_value = await map_sqlalchemy_to_type(value, info, relationship_type, nested_fields)
+                    mapped_value = await map_sqlalchemy_to_type(value, info, relationship_type, item_fields)
                     if mapped_value is not None:
                         type_data[field_name] = mapped_value
                     else:

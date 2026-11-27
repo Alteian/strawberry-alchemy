@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import JSON, ColumnElement, String, and_, literal, or_
+from sqlalchemy import JSON, ColumnElement, String, and_, literal, or_, tuple_
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from strawberry_alchemy.filtering.filter_builder import FilterBuilder
 from strawberry_alchemy.utils import camel_to_snake
 
 from .prefetch import (
+    PREFETCH_MAX_ITEMS_UNSET,
     AnnotateAncestry,
     AnnotateAnyExists,
     AnnotateCount,
@@ -173,8 +174,8 @@ class QueryOptimizer:
         return None
 
     def normalize_field_name(self, field_name: str) -> str:
-        if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items"):
-            return field_name
+        if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items", "hasMore", "has_more"):
+            return field_name if field_name != "hasMore" else "has_more"
         normalized = camel_to_snake(field_name)
         return normalized if isinstance(normalized, str) else field_name
 
@@ -186,7 +187,16 @@ class QueryOptimizer:
             selection_to_model_fields,
         )
 
-        relay_wrapper_keys = {"edges", "cursor", "pageInfo", "totalCount", "__typename", "items"}
+        relay_wrapper_keys = {
+            "edges",
+            "cursor",
+            "pageInfo",
+            "totalCount",
+            "__typename",
+            "items",
+            "has_more",
+            "hasMore",
+        }
 
         # Preserve list-shaped ``items`` (ListResult) before typed parse.
         if set(selected_fields.keys()).issubset(relay_wrapper_keys):
@@ -212,6 +222,9 @@ class QueryOptimizer:
             if normalized_key == "items" and isinstance(value, dict):
                 nested = self.extract_model_fields(value, level + 1)
                 model_fields.update(nested)
+                continue
+
+            if normalized_key in {"has_more", "hasMore"}:
                 continue
 
             if isinstance(value, dict):
@@ -644,10 +657,10 @@ class QueryOptimizer:
     def _collection_limit_criterion(
         rel_prop: RelationshipProperty[Any],
         related_model: type[Any],
-        max_items: int,
+        fetch_limit: int,
     ) -> Any | None:
-        """Per-parent ROW_NUMBER cap for to-many selectin loads."""
-        if not rel_prop.uselist or max_items <= 0 or rel_prop.secondary is not None:
+        """Per-parent ROW_NUMBER cap for to-many selectin loads (``fetch_limit`` = max_items+1)."""
+        if not rel_prop.uselist or fetch_limit <= 0 or rel_prop.secondary is not None:
             return None
 
         remote_cols = [remote for _local, remote in rel_prop.local_remote_pairs]
@@ -655,9 +668,8 @@ class QueryOptimizer:
             return None
 
         pk_cols = list(related_model.__mapper__.primary_key)
-        if len(pk_cols) != 1:
+        if not pk_cols:
             return None
-        pk = pk_cols[0]
 
         order_by = rel_prop.order_by
         if order_by is None:
@@ -668,13 +680,19 @@ class QueryOptimizer:
             order_cols = [order_by]
 
         partition_by: Any = remote_cols[0] if len(remote_cols) == 1 else remote_cols
+        pk_labels = [col.label(f"limited_pk_{i}") for i, col in enumerate(pk_cols)]
         ranked = (
             select(
-                pk.label("limited_id"),
+                *pk_labels,
                 func.row_number().over(partition_by=partition_by, order_by=order_cols).label("rn"),
             )
         ).subquery()
-        return pk.in_(select(ranked.c.limited_id).where(ranked.c.rn <= max_items))
+        limited = select(*(getattr(ranked.c, f"limited_pk_{i}") for i in range(len(pk_cols)))).where(
+            ranked.c.rn <= fetch_limit
+        )
+        if len(pk_cols) == 1:
+            return pk_cols[0].in_(limited)
+        return tuple_(*pk_cols).in_(limited)
 
     @staticmethod
     def _selectinload_with_conditions(attr: Any, conditions: list[Any]) -> Any:
@@ -682,13 +700,27 @@ class QueryOptimizer:
             return selectinload(attr)
         return selectinload(attr.and_(*conditions))
 
+    def _append_collection_limit(
+        self,
+        conditions: list[Any],
+        rel_prop: RelationshipProperty[Any],
+        related_model: type[Any],
+        max_items: int | None,
+    ) -> None:
+        if max_items is None:
+            return
+        # Fetch one extra row so NestedListResult.has_more can be set in mapping.
+        limit_crit = self._collection_limit_criterion(rel_prop, related_model, max_items + 1)
+        if limit_crit is not None:
+            conditions.append(limit_crit)
+
     async def _build_filtered_selectinload(
         self,
         model: type[Any],
         prefetch: PrefetchRelated,
         user_id: Any | None,
         context_user: Any | None = None,
-        max_items: int | None = None,
+        strawberry_type: type | None = None,
     ) -> Any | None:
         _, attr = self.get_model_attribute(model, prefetch.relationship)
         if attr is None or not self.is_relationship(attr):
@@ -722,10 +754,17 @@ class QueryOptimizer:
             if acl_clause is not None:
                 conditions.append(acl_clause)
 
-        if max_items is not None:
-            limit_crit = self._collection_limit_criterion(rel_prop, related_model, max_items)
-            if limit_crit is not None:
-                conditions.append(limit_crit)
+        from strawberry_alchemy.types.node_config import resolve_max_items
+
+        if prefetch.max_items is not PREFETCH_MAX_ITEMS_UNSET:
+            max_items = resolve_max_items(
+                strawberry_type,
+                prefetch.relationship,
+                prefetch_max_items=prefetch.max_items,
+            )
+        else:
+            max_items = resolve_max_items(strawberry_type, prefetch.relationship)
+        self._append_collection_limit(conditions, rel_prop, related_model, max_items)
 
         return self._selectinload_with_conditions(attr, conditions)
 
@@ -751,7 +790,7 @@ class QueryOptimizer:
         all_attributes = self.get_all_model_attributes(model)
         requested_attrs = self.collect_requested_fields(selected_fields, model)
         _analyzer = self.analyzer
-        _skip_keys = frozenset(("__typename", "pageInfo", "totalCount"))
+        _skip_keys = frozenset(("__typename", "pageInfo", "totalCount", "has_more", "hasMore"))
 
         for field_name, subfields in selected_fields.items():
             if field_name in _skip_keys:
@@ -798,11 +837,10 @@ class QueryOptimizer:
                     conditions: list[Any] = []
                     if criteria is not None:
                         conditions.append(criteria)
-                    max_items = getattr(strawberry_type, "max_items", None) if strawberry_type is not None else None
-                    if max_items is not None:
-                        limit_crit = self._collection_limit_criterion(attr.property, related_model, max_items)
-                        if limit_crit is not None:
-                            conditions.append(limit_crit)
+                    from strawberry_alchemy.types.node_config import resolve_max_items
+
+                    max_items = resolve_max_items(strawberry_type, field_name)
+                    self._append_collection_limit(conditions, attr.property, related_model, max_items)
                     relationship_loader = self._selectinload_with_conditions(attr, conditions)
 
                     nested_load_options = await self.build_query_with_selected_fields(
@@ -896,14 +934,13 @@ class QueryOptimizer:
             context_user=context_user,
         )
 
-        parent_max_items = getattr(strawberry_type, "max_items", None) if strawberry_type is not None else None
         for prefetch in deps.filtered_prefetches:
             filtered_opt = await self._build_filtered_selectinload(
                 model,
                 prefetch,
                 user_id,
                 context_user=context_user,
-                max_items=parent_max_items,
+                strawberry_type=strawberry_type,
             )
             if filtered_opt is not None:
                 load_options.append(filtered_opt)

@@ -13,7 +13,7 @@ row-level ACL, permissions helpers, and input/output mapping.
 | **QueryOptimizer** | Selection set → one SQLAlchemy query: `selectinload`, `defer()`, `EXISTS` / `COUNT` / ancestry CTE annotations |
 | **`@optimize_field` hints** | `PrefetchRelated`, `SelectColumns`, `AnnotateExists`, `AnnotateAnyExists`, `AnnotateCount`, `AnnotateCustom`, `AnnotateAncestry` |
 | **FilterBuilder** | Strawberry filter inputs → `WHERE`, with `AND` / `OR`, relation joins, `CUSTOM_FILTERS`, JSONB key filters |
-| **Types** | `BaseNodeType` (Relay `Node`), `ListResult`, `OptimizedListConnection` / `Edge` / `PageInfo` |
+| **Types** | `BaseNodeType` (Relay `Node`), `ListResult`, `NestedListResult`, `NodeConfig` / `MaxItems`, `OptimizedListConnection` / `Edge` / `PageInfo` |
 | **Repository** | Async CRUD, soft-delete, relation add/remove, `DeletionReport` / cascade handlers |
 | **Mapping & schema** | `BaseSchema`, `schema_from_input` / `from_input`, SQLAlchemy → Strawberry mapping |
 | **Access control** | `AccessControlFilter` (row ACL), `RelationAccessFilter` (per-edge ACL override) |
