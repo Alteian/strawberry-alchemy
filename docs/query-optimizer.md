@@ -29,6 +29,7 @@ need a custom session, mapping path, or subclass (custom order expressions).
 |---|---|
 | Column deferral | Unrequested scalar columns are `defer()`'d |
 | Relationship loading | Selected relations use `selectinload` (with nested ACL when registered) |
+| Nested list caps | To-many selectin loads capped per parent (`NodeConfig` / `MaxItems`; default 100; fetch N+1 for `has_more`). Does not apply to Relay connections — those use `relay_max_results` / `first` / `last` (see [Queries](queries.md#pagination-notes)). |
 | Access control | Registered `AccessControlFilter` on root + nested loads |
 | Filters / order / limit | Via `optimize_query` kwargs |
 | Hints | `@optimize_field` dependencies merge into the load plan |
@@ -63,7 +64,8 @@ async def cover_thumb_url(self, info: Info) -> str | None:
     ...
 ```
 
-Constructor: `PrefetchRelated(relationship, fields=None, filter_current_user=False, filter=None, access_filter=None)`.
+Constructor: `PrefetchRelated(relationship, fields=None, filter_current_user=False, filter=None, access_filter=None, max_items=…)`.
+Omit `max_items` to inherit `NodeConfig` / `MaxItems`; pass `None` for unlimited on that prefetch.
 
 Shorthand: `@optimize_field("comments")` ≡ `PrefetchRelated("comments")`.
 

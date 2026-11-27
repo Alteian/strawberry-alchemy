@@ -125,10 +125,40 @@ See [Recipes: shared vs tenant sessions](recipes.md#shared-vs-tenant-sessions).
 
 ## Pagination notes
 
+Nested list caps (`NodeConfig` / `MaxItems` / `NestedListResult`) and Relay
+connections are **different** mechanisms:
+
+| Surface | How it is restricted |
+|---|---|
+| Nested to-many (`NestedListResult` / bare `list[T]` via selectin) | `NodeConfig` / `MaxItems` (default 100; N+1 → `hasMore`) |
+| Top-level Relay (`resolve_connection` / `OptimizedListConnection`) | Client `first` / `last`, hard-capped by `StrawberryConfig(relay_max_results=…)` (Strawberry default **100**) |
+| Top-level list (`resolve_list`) | Explicit `limit=` on the resolve call — no automatic cap |
+
+`NodeConfig` does **not** apply to connections. Connection page size +
+`hasNextPage` come from `SliceMetadata` → `optimize_query(..., limit=fetch_limit)`.
+
+```python
+import strawberry
+from strawberry.schema.config import StrawberryConfig
+
+schema = strawberry.Schema(
+    query=Query,
+    config=StrawberryConfig(relay_max_results=50),
+)
+```
+
+**Production pattern**
+
+- Nested collections → `NestedListResult` + `NodeConfig` / `MaxItems`
+- Large or scrollable sets → top-level (or dedicated) **connection** field with
+  `first` / cursors
+- Many-to-many (`secondary=`) nested edges are not capped by `NodeConfig` —
+  prefer a connection-style field or an explicit filtered prefetch
+
+Also:
+
 - Prefer Relay connections for infinite scroll; use `ListResult` for simple
   admin tables.
-- Configure `StrawberryConfig(relay_max_results=…)` on the schema to cap
-  connection page size.
 - Soft-deleted rows are not filtered by the optimizer itself — apply
   `deleted_at IS NULL` in your `AccessControlFilter` or repository list helpers
   when needed.

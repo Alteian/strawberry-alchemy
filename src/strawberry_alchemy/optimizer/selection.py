@@ -83,7 +83,16 @@ def parse_selection_tree(
     and ``edges`` contains a ``node`` selection. A domain relationship literally
     named ``edges`` (no ``node`` child) stays a normal ``FieldSelection``.
     """
-    relay_wrapper_keys = {"edges", "cursor", "pageInfo", "totalCount", "__typename", "items"}
+    relay_wrapper_keys = {
+        "edges",
+        "cursor",
+        "pageInfo",
+        "totalCount",
+        "__typename",
+        "items",
+        "has_more",
+        "hasMore",
+    }
 
     if selected_fields and set(selected_fields.keys()).issubset(relay_wrapper_keys):
         edges = selected_fields.get("edges")
@@ -108,7 +117,7 @@ def _parse_children(
 ) -> dict[str, FieldSelection | LeafSelection | RelayConnectionSelection]:
     children: dict[str, FieldSelection | LeafSelection | RelayConnectionSelection] = {}
     for key, value in selected_fields.items():
-        if key in {"__typename", "cursor", "pageInfo", "totalCount"}:
+        if key in {"__typename", "cursor", "pageInfo", "totalCount", "has_more", "hasMore"}:
             continue
         if key == "edges" and _is_relay_edges(value):
             children[key] = RelayConnectionSelection(node_fields=dict(value["node"]))

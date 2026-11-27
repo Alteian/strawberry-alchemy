@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 PREFETCH_ATTR = "__optimizer_prefetch__"
+PREFETCH_MAX_ITEMS_UNSET: object = object()
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -18,10 +19,25 @@ class PrefetchRelated:
     filter_current_user: bool = False
     filter: Callable[[type], Any] | None = None
     access_filter: type[AccessControlFilter] | AccessControlFilter | None = None
+    # ``PREFETCH_MAX_ITEMS_UNSET`` inherits NodeConfig / MaxItems; ``None`` = unlimited.
+    max_items: int | None | object = PREFETCH_MAX_ITEMS_UNSET
+
+    def __post_init__(self) -> None:
+        if self.max_items is PREFETCH_MAX_ITEMS_UNSET:
+            return
+        if self.max_items is not None and not isinstance(self.max_items, int):
+            raise TypeError(f"PrefetchRelated.max_items must be int | None, got {type(self.max_items)}")
+        if isinstance(self.max_items, int) and self.max_items <= 0:
+            raise ValueError(f"PrefetchRelated.max_items must be None or a positive int, got {self.max_items!r}")
 
     @property
     def has_custom_loading(self) -> bool:
-        return self.filter_current_user or self.filter is not None or self.access_filter is not None
+        return (
+            self.filter_current_user
+            or self.filter is not None
+            or self.access_filter is not None
+            or self.max_items is not PREFETCH_MAX_ITEMS_UNSET
+        )
 
 
 @dataclass(frozen=True)

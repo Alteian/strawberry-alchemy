@@ -116,6 +116,63 @@ def normalize_unset_scalars_on_instance(
             object.__setattr__(instance, field_name, None)
 
 
+def _is_nested_list_result_type(tp: Any) -> bool:
+    from strawberry_alchemy.types.list_result import NestedListResult
+
+    if tp is NestedListResult:
+        return True
+    if isinstance(tp, type) and getattr(tp, "__name__", "") == "NestedListResult":
+        return True
+    definition = getattr(tp, "__strawberry_definition__", None)
+    if definition is not None:
+        names = {f.name for f in definition.fields}
+        if "items" in names and "has_more" in names:
+            return True
+    return False
+
+
+def _nested_list_result_item_type(field_type: Any) -> type[Any] | None:
+    """If ``field_type`` is ``NestedListResult[T]`` (optional/lazy), return ``T``."""
+    from typing import get_args, get_origin
+
+    current = field_type
+    while True:
+        if isinstance(current, StrawberryOptional):
+            current = current.of_type
+            continue
+        if isinstance(current, LazyType):
+            current = current.resolve_type()
+            continue
+        break
+
+    if not _is_nested_list_result_type(current) and not _is_nested_list_result_type(get_origin(current) or current):
+        # Specialized generic may still expose __args__ / strawberry type args
+        origin = get_origin(current)
+        if origin is not None and not _is_nested_list_result_type(origin):
+            return None
+        if origin is None and not _is_nested_list_result_type(current):
+            return None
+
+    args = get_args(current)
+    if not args:
+        type_def = getattr(current, "__strawberry_definition__", None)
+        # Fall back: look at items field type on the specialized NestedListResult
+        if type_def is not None:
+            for f in type_def.fields:
+                if f.name == "items":
+                    related, is_list = _unwrap_strawberry_field_type(f.type)
+                    return related if is_list else related
+        return None
+
+    item = args[0]
+    related, _ = _unwrap_strawberry_field_type(item)
+    if related is not None:
+        return related
+    if isinstance(item, type) and hasattr(item, "__strawberry_definition__"):
+        return item
+    return None
+
+
 def _unwrap_strawberry_field_type(field_type: Any) -> tuple[type[Any] | None, bool]:
     """Unwrap Optional / List / LazyType to a concrete Strawberry object type, if any."""
     current = field_type
@@ -218,8 +275,9 @@ def convert_nested_schema_fields(
         if field_name not in mapped_data or field_name in skip_keys:
             continue
 
+        nested_item_type = _nested_list_result_item_type(field.type)
         related_type, is_list = _unwrap_strawberry_field_type(field.type)
-        if related_type is None:
+        if nested_item_type is None and related_type is None:
             continue
 
         value = _prefer_live_schema_value(source_schema, field_name, mapped_data[field_name])
@@ -227,10 +285,23 @@ def convert_nested_schema_fields(
             mapped_data[field_name] = None
             continue
 
-        if is_list:
-            if not isinstance(value, list):
+        if nested_item_type is not None:
+            from strawberry_alchemy.types.list_result import NestedListResult
+
+            if hasattr(value, "__strawberry_definition__") and _is_nested_list_result_type(type(value)):
+                continue
+            raw_items = value.items if hasattr(value, "items") and not isinstance(value, list) else value
+            if not isinstance(raw_items, list):
+                mapped_data[field_name] = value
+                continue
+            mapped_data[field_name] = NestedListResult(
+                items=[_convert_one_nested_value(item, nested_item_type, seen=seen) for item in raw_items],
+                has_more=bool(getattr(value, "has_more", False)),
+            )
+        elif is_list:
+            if related_type is None or not isinstance(value, list):
                 mapped_data[field_name] = value
                 continue
             mapped_data[field_name] = [_convert_one_nested_value(item, related_type, seen=seen) for item in value]
-        else:
+        elif related_type is not None:
             mapped_data[field_name] = _convert_one_nested_value(value, related_type, seen=seen)

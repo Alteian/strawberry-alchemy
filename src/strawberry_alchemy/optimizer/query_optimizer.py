@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import JSON, ColumnElement, String, and_, literal, or_
+from sqlalchemy import JSON, ColumnElement, String, and_, literal, or_, tuple_
 from sqlalchemy import cast as sql_cast
 from sqlalchemy.dialects.postgresql import JSONB as PGJSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from strawberry_alchemy.filtering.filter_builder import FilterBuilder
 from strawberry_alchemy.utils import camel_to_snake
 
 from .prefetch import (
+    PREFETCH_MAX_ITEMS_UNSET,
     AnnotateAncestry,
     AnnotateAnyExists,
     AnnotateCount,
@@ -173,8 +174,8 @@ class QueryOptimizer:
         return None
 
     def normalize_field_name(self, field_name: str) -> str:
-        if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items"):
-            return field_name
+        if field_name in ("__typename", "edges", "node", "pageInfo", "totalCount", "items", "hasMore", "has_more"):
+            return field_name if field_name != "hasMore" else "has_more"
         normalized = camel_to_snake(field_name)
         return normalized if isinstance(normalized, str) else field_name
 
@@ -186,7 +187,16 @@ class QueryOptimizer:
             selection_to_model_fields,
         )
 
-        relay_wrapper_keys = {"edges", "cursor", "pageInfo", "totalCount", "__typename", "items"}
+        relay_wrapper_keys = {
+            "edges",
+            "cursor",
+            "pageInfo",
+            "totalCount",
+            "__typename",
+            "items",
+            "has_more",
+            "hasMore",
+        }
 
         # Preserve list-shaped ``items`` (ListResult) before typed parse.
         if set(selected_fields.keys()).issubset(relay_wrapper_keys):
@@ -212,6 +222,9 @@ class QueryOptimizer:
             if normalized_key == "items" and isinstance(value, dict):
                 nested = self.extract_model_fields(value, level + 1)
                 model_fields.update(nested)
+                continue
+
+            if normalized_key in {"has_more", "hasMore"}:
                 continue
 
             if isinstance(value, dict):
@@ -640,12 +653,85 @@ class QueryOptimizer:
             return None
         return filter_fn(related_model)
 
+    @staticmethod
+    def _collection_limit_criterion(
+        rel_prop: RelationshipProperty[Any],
+        related_model: type[Any],
+        fetch_limit: int,
+        filter_conditions: list[Any] | None = None,
+    ) -> Any | None:
+        """Per-parent ROW_NUMBER cap for to-many selectin loads (``fetch_limit`` = max_items+1).
+
+        ``filter_conditions`` (ACL / prefetch filters) are applied *inside* the window so
+        ranking and ``has_more`` reflect authorized rows, not a pre-ACL slice.
+        """
+        if not rel_prop.uselist or fetch_limit <= 0 or rel_prop.secondary is not None:
+            return None
+
+        remote_cols = [remote for _local, remote in rel_prop.local_remote_pairs]
+        if not remote_cols:
+            return None
+
+        pk_cols = list(related_model.__mapper__.primary_key)
+        if not pk_cols:
+            return None
+
+        order_by = rel_prop.order_by
+        if order_by is None:
+            order_cols: list[Any] = list(pk_cols)
+        elif isinstance(order_by, (list, tuple)):
+            order_cols = list(order_by)
+        else:
+            order_cols = [order_by]
+
+        partition_by: Any = remote_cols[0] if len(remote_cols) == 1 else remote_cols
+        pk_labels = [col.label(f"limited_pk_{i}") for i, col in enumerate(pk_cols)]
+        ranked_stmt = select(
+            *pk_labels,
+            func.row_number().over(partition_by=partition_by, order_by=order_cols).label("rn"),
+        )
+        if filter_conditions:
+            ranked_stmt = ranked_stmt.where(and_(*filter_conditions))
+        ranked = ranked_stmt.subquery()
+        limited = select(*(getattr(ranked.c, f"limited_pk_{i}") for i in range(len(pk_cols)))).where(
+            ranked.c.rn <= fetch_limit
+        )
+        if len(pk_cols) == 1:
+            return pk_cols[0].in_(limited)
+        return tuple_(*pk_cols).in_(limited)
+
+    @staticmethod
+    def _selectinload_with_conditions(attr: Any, conditions: list[Any]) -> Any:
+        if not conditions:
+            return selectinload(attr)
+        return selectinload(attr.and_(*conditions))
+
+    def _append_collection_limit(
+        self,
+        conditions: list[Any],
+        rel_prop: RelationshipProperty[Any],
+        related_model: type[Any],
+        max_items: int | None,
+    ) -> None:
+        if max_items is None:
+            return
+        # Rank within already-collected filters (ACL etc.), then fetch one extra for has_more.
+        limit_crit = self._collection_limit_criterion(
+            rel_prop,
+            related_model,
+            max_items + 1,
+            filter_conditions=list(conditions) if conditions else None,
+        )
+        if limit_crit is not None:
+            conditions.append(limit_crit)
+
     async def _build_filtered_selectinload(
         self,
         model: type[Any],
         prefetch: PrefetchRelated,
         user_id: Any | None,
         context_user: Any | None = None,
+        strawberry_type: type | None = None,
     ) -> Any | None:
         _, attr = self.get_model_attribute(model, prefetch.relationship)
         if attr is None or not self.is_relationship(attr):
@@ -679,10 +765,19 @@ class QueryOptimizer:
             if acl_clause is not None:
                 conditions.append(acl_clause)
 
-        if not conditions:
-            return selectinload(attr)
+        from strawberry_alchemy.types.node_config import resolve_max_items
 
-        return selectinload(attr.and_(*conditions))
+        if prefetch.max_items is not PREFETCH_MAX_ITEMS_UNSET:
+            max_items = resolve_max_items(
+                strawberry_type,
+                prefetch.relationship,
+                prefetch_max_items=prefetch.max_items,
+            )
+        else:
+            max_items = resolve_max_items(strawberry_type, prefetch.relationship)
+        self._append_collection_limit(conditions, rel_prop, related_model, max_items)
+
+        return self._selectinload_with_conditions(attr, conditions)
 
     def _get_strawberry_type_for_model(self, model: type[Any]) -> type[Any] | None:
         type_name = model.__name__
@@ -706,7 +801,7 @@ class QueryOptimizer:
         all_attributes = self.get_all_model_attributes(model)
         requested_attrs = self.collect_requested_fields(selected_fields, model)
         _analyzer = self.analyzer
-        _skip_keys = frozenset(("__typename", "pageInfo", "totalCount"))
+        _skip_keys = frozenset(("__typename", "pageInfo", "totalCount", "has_more", "hasMore"))
 
         for field_name, subfields in selected_fields.items():
             if field_name in _skip_keys:
@@ -750,9 +845,14 @@ class QueryOptimizer:
                     else:
                         # Always try ACL even when context_user is None — filters often deny anonymous.
                         criteria = await self._acl_whereclause_for_model(related_model, context_user)
-                    relationship_loader = (
-                        selectinload(attr.and_(criteria)) if criteria is not None else selectinload(attr)
-                    )
+                    conditions: list[Any] = []
+                    if criteria is not None:
+                        conditions.append(criteria)
+                    from strawberry_alchemy.types.node_config import resolve_max_items
+
+                    max_items = resolve_max_items(strawberry_type, field_name)
+                    self._append_collection_limit(conditions, attr.property, related_model, max_items)
+                    relationship_loader = self._selectinload_with_conditions(attr, conditions)
 
                     nested_load_options = await self.build_query_with_selected_fields(
                         related_model,
@@ -846,7 +946,13 @@ class QueryOptimizer:
         )
 
         for prefetch in deps.filtered_prefetches:
-            filtered_opt = await self._build_filtered_selectinload(model, prefetch, user_id, context_user=context_user)
+            filtered_opt = await self._build_filtered_selectinload(
+                model,
+                prefetch,
+                user_id,
+                context_user=context_user,
+                strawberry_type=strawberry_type,
+            )
             if filtered_opt is not None:
                 load_options.append(filtered_opt)
                 if self.analyzer:

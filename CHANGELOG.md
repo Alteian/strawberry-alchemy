@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-27
+
+### Added
+
+- **`NodeConfig`** — frozen ClassVar on `BaseNodeType` (`config`) for nested
+  to-many caps: `max_items` (default `100`) and per-field `fields={...}`.
+  `None` = unlimited; non-positive values raise.
+- **`MaxItems`** — `FieldExtension` for per-edge overrides (wins over
+  `NodeConfig`). Mirrors `RelationAccessFilter` attachment style.
+- **`NestedListResult[T]`** — `{items, has_more}` wrapper for nested to-many
+  fields. Optimizer fetches `max_items + 1`; mapping trims and sets `has_more`.
+- **`PrefetchRelated.max_items`** — optional cap on `@optimize_field` prefetches
+  (`None` = unlimited; omit to inherit `NodeConfig` / `MaxItems`).
+- Composite-PK to-many relationships are capped via multi-column `ROW_NUMBER`
+  + `tuple_().in_()` (M2M / secondary tables still uncapped).
+
+### Changed
+
+- **Breaking** — nested to-many `selectinload`s are capped at 100 items per
+  parent by default. Prefer `NestedListResult` so clients can read `hasMore`.
+  Bare `list[T]` fields are still capped for safety but cannot surface
+  `has_more`. Override with `NodeConfig(max_items=None)` / `MaxItems(None)` /
+  `config.fields` / app-wide `BaseNodeType.config = NodeConfig(...)`.
+- Resolution order: `PrefetchRelated.max_items` → `MaxItems` →
+  `NodeConfig.fields[field]` → `NodeConfig.max_items` → `100`.
+
+### Fixed
+
+- Nested list caps apply ACL / prefetch filters **inside** the `ROW_NUMBER`
+  window so `NestedListResult.has_more` reflects authorized rows, not a
+  pre-ACL slice.
+
+### Docs
+
+- Clarify that Relay connections are capped via `relay_max_results` /
+  `first` / `last`, not `NodeConfig` (pagination notes + types / optimizer).
+
 ## [0.7.3] — 2026-11-22
 
 ### Added

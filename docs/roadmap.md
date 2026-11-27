@@ -16,6 +16,8 @@ for the full history. Highlights:
 - **0.6.0** — `BaseSchema.from_input` / `schema_from_input`
 - **0.7.x** — `RelationAccessFilter` (+ `foreign_key=`), `PrefetchRelated.access_filter`,
   `DateFilter`, FilterBuilder boolean/`isnull` coercion fix
+- **0.8.0** — `NodeConfig` / `MaxItems` / `NestedListResult` nested to-many caps
+  (default 100, `has_more`, field-level overrides, composite PK)
 
 ## Later
 

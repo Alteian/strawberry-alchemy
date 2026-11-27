@@ -58,20 +58,41 @@ Relay `Node` GraphQL type that owns the read path into the optimizer.
 
 | ClassVar | Purpose |
 |---|---|
+| `config` | `NodeConfig` — nested to-many caps (`max_items`, per-field `fields`) |
 | `CUSTOM_FILTERS` | `dict[str, Callable]` — non-column filter keys → SQL clause builders |
 | `model_class` | Filled from `access_filter.model_class` |
 
 Declare selected columns and relationships as Strawberry fields defaulting to
-`UNSET`. Nested types often use `strawberry.lazy` to break cycles.
+`UNSET`. Nested types often use `strawberry.lazy` to break cycles. Prefer
+`NestedListResult` for to-many relations so clients get `hasMore` when the
+default cap (100) truncates.
 
 ```python
+from strawberry_alchemy import MaxItems, NestedListResult, NodeConfig
+
 @strawberry.type
 class PostType(BaseNodeType):
     access_filter: ClassVar[type[PostAccessFilter]] = PostAccessFilter
+    config: ClassVar[NodeConfig] = NodeConfig(max_items=50, fields={"tags": None})
 
     title: str | None = strawberry.UNSET
-    comments: list[CommentType] | None = strawberry.UNSET
+    comments: NestedListResult[CommentType] | None = strawberry.UNSET
+    tags: NestedListResult[TagType] | None = strawberry.field(
+        default=strawberry.UNSET,
+        extensions=[MaxItems(20)],
+    )
 ```
+
+Cap resolution (highest wins): `MaxItems` → `config.fields[name]` →
+`config.max_items` → `100`. Pass `None` for unlimited. App-wide default:
+`BaseNodeType.config = NodeConfig(max_items=50)` at import time, or subclass
+once.
+
+These caps apply only to **nested selectin** loads. Top-level Relay connections
+use `first` / `last` + `StrawberryConfig(relay_max_results=…)` instead — see
+[Queries: Pagination notes](queries.md#pagination-notes). Many-to-many
+(`secondary=`) nested edges are not capped; expose them as a connection field
+or filtered prefetch when the association can grow large.
 
 ### Construction helpers
 
@@ -97,6 +118,19 @@ class ListResult[T]:
 
 Returned by `BaseNodeType.resolve_list`.
 
+## `NestedListResult`
+
+Capped nested to-many wrapper (selectin loads fetch `max_items + 1`):
+
+```python
+@strawberry.type
+class NestedListResult[T]:
+    items: list[T]
+    has_more: bool = False
+```
+
+GraphQL selection: `comments { items { … } hasMore }`.
+
 ## Relay connection types
 
 | Symbol | Role |
@@ -107,7 +141,8 @@ Returned by `BaseNodeType.resolve_list`.
 
 `resolve_connection` on `BaseNodeType` delegates to
 `OptimizedListConnection.resolve_connection`, which uses the same optimizer path
-as lists.
+as lists for loading, but page size is controlled by Relay args /
+`relay_max_results` — not `NodeConfig`.
 
 ## `Ordering`
 
