@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Require **SQLAlchemy >= 2.1.9** and **strawberry-graphql >= 0.341.3**.
+  SQLAlchemy 2.1.7–2.1.9 include fixes for `selectinload(...).and_()` criteria
+  (parenthesization / cache correctness and edge-local filter scope) that the
+  optimizer uses for nested ACL and `max_items` caps.
+
 ## [0.8.0] — 2026-11-27
 
 ### Added
