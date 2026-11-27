@@ -642,7 +642,7 @@ class QueryOptimizer:
 
     @staticmethod
     def _collection_limit_criterion(
-        rel_prop: RelationshipProperty,
+        rel_prop: RelationshipProperty[Any],
         related_model: type[Any],
         max_items: int,
     ) -> Any | None:
