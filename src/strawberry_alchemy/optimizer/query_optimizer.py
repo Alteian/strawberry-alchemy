@@ -658,8 +658,13 @@ class QueryOptimizer:
         rel_prop: RelationshipProperty[Any],
         related_model: type[Any],
         fetch_limit: int,
+        filter_conditions: list[Any] | None = None,
     ) -> Any | None:
-        """Per-parent ROW_NUMBER cap for to-many selectin loads (``fetch_limit`` = max_items+1)."""
+        """Per-parent ROW_NUMBER cap for to-many selectin loads (``fetch_limit`` = max_items+1).
+
+        ``filter_conditions`` (ACL / prefetch filters) are applied *inside* the window so
+        ranking and ``has_more`` reflect authorized rows, not a pre-ACL slice.
+        """
         if not rel_prop.uselist or fetch_limit <= 0 or rel_prop.secondary is not None:
             return None
 
@@ -681,12 +686,13 @@ class QueryOptimizer:
 
         partition_by: Any = remote_cols[0] if len(remote_cols) == 1 else remote_cols
         pk_labels = [col.label(f"limited_pk_{i}") for i, col in enumerate(pk_cols)]
-        ranked = (
-            select(
-                *pk_labels,
-                func.row_number().over(partition_by=partition_by, order_by=order_cols).label("rn"),
-            )
-        ).subquery()
+        ranked_stmt = select(
+            *pk_labels,
+            func.row_number().over(partition_by=partition_by, order_by=order_cols).label("rn"),
+        )
+        if filter_conditions:
+            ranked_stmt = ranked_stmt.where(and_(*filter_conditions))
+        ranked = ranked_stmt.subquery()
         limited = select(*(getattr(ranked.c, f"limited_pk_{i}") for i in range(len(pk_cols)))).where(
             ranked.c.rn <= fetch_limit
         )
@@ -709,8 +715,13 @@ class QueryOptimizer:
     ) -> None:
         if max_items is None:
             return
-        # Fetch one extra row so NestedListResult.has_more can be set in mapping.
-        limit_crit = self._collection_limit_criterion(rel_prop, related_model, max_items + 1)
+        # Rank within already-collected filters (ACL etc.), then fetch one extra for has_more.
+        limit_crit = self._collection_limit_criterion(
+            rel_prop,
+            related_model,
+            max_items + 1,
+            filter_conditions=list(conditions) if conditions else None,
+        )
         if limit_crit is not None:
             conditions.append(limit_crit)
 

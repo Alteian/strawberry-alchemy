@@ -83,6 +83,33 @@ class CompositeChild(_TestBase):
     parent: Mapped[CompositeParent | None] = relationship(back_populates="children")
 
 
+class OrderedParent(_TestBase):
+    __tablename__ = "max_items_ordered_parents"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    title: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    children: Mapped[list[OrderedChild]] = relationship(
+        back_populates="parent",
+        order_by="OrderedChild.seq",
+    )
+
+
+class OrderedChild(_TestBase):
+    __tablename__ = "max_items_ordered_children"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    parent_id: Mapped[UUID] = mapped_column(ForeignKey("max_items_ordered_parents.id"))
+    seq: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    parent: Mapped[OrderedParent | None] = relationship(back_populates="children")
+
+
 class OpenAccessFilter(AccessControlFilter):
     model_class = Parent
 
@@ -105,6 +132,24 @@ class TagOpenAccessFilter(AccessControlFilter):
     @staticmethod
     async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
         return query
+
+
+class OrderedParentAccessFilter(AccessControlFilter):
+    model_class = OrderedParent
+
+    @staticmethod
+    async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
+        return query
+
+
+class OrderedChildAccessFilter(AccessControlFilter):
+    """Only seq >= 5 is visible — first five rows by order_by are denied."""
+
+    model_class = OrderedChild
+
+    @staticmethod
+    async def apply_filter(query: Any, model: type[Any], context_user: Any) -> Any:
+        return query.where(model.seq >= 5)
 
 
 @strawberry.type
@@ -145,6 +190,24 @@ class UnlimitedParentType(BaseNodeType):
     children: NestedListResult[ChildType] | None = strawberry.UNSET
 
 
+@strawberry.type
+class OrderedChildType(BaseNodeType):
+    access_filter: ClassVar[type[AccessControlFilter]] = OrderedChildAccessFilter
+
+    title: str | None = strawberry.UNSET
+    seq: int | None = strawberry.UNSET
+    parent_id: UUID | None = strawberry.UNSET
+
+
+@strawberry.type
+class OrderedParentType(BaseNodeType):
+    access_filter: ClassVar[type[AccessControlFilter]] = OrderedParentAccessFilter
+    config: ClassVar[NodeConfig] = NodeConfig(max_items=2)
+
+    title: str | None = strawberry.UNSET
+    children: NestedListResult[OrderedChildType] | None = strawberry.UNSET
+
+
 class GraphQLContext:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -165,9 +228,14 @@ class Query:
     async def unlimited_parents(self, info: Info) -> ListResult[UnlimitedParentType]:
         return await UnlimitedParentType.resolve_list(info)
 
+    @strawberry.field
+    async def ordered_parents(self, info: Info) -> ListResult[OrderedParentType]:
+        return await OrderedParentType.resolve_list(info)
+
 
 PARENT_A = uuid4()
 PARENT_B = uuid4()
+ORDERED_PARENT = uuid4()
 
 
 @pytest.fixture
@@ -206,6 +274,24 @@ async def session() -> AsyncGenerator[AsyncSession]:
                     ],
                 )
             )
+        db.add(
+            OrderedParent(
+                id=ORDERED_PARENT,
+                title="ordered",
+                created_at=now,
+                updated_at=now,
+                children=[
+                    OrderedChild(
+                        id=uuid4(),
+                        seq=i,
+                        title=f"ord-{i}",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    for i in range(10)
+                ],
+            )
+        )
         await db.commit()
         db.expire_all()
         yield db
@@ -297,3 +383,35 @@ def test_collection_limit_supports_composite_primary_key() -> None:
     assert "row_number" in sql
     assert "limited_pk_0" in sql
     assert "limited_pk_1" in sql
+
+
+@pytest.mark.asyncio
+async def test_cap_ranks_within_acl_so_has_more_is_honest(session: AsyncSession) -> None:
+    """Pre-ACL top-N would load seq 0..2 (all denied) → empty + hasMore false.
+
+    Ranking inside ACL (seq >= 5) should return seq 5,6 with hasMore true.
+    """
+    schema = strawberry.Schema(query=Query)
+    context = GraphQLContext(session)
+
+    result = await schema.execute(
+        """
+        query {
+          orderedParents {
+            items {
+              title
+              children { items { title seq } hasMore }
+            }
+          }
+        }
+        """,
+        context_value=context,
+    )
+
+    assert result.errors is None, result.errors
+    assert result.data is not None
+    parents = result.data["orderedParents"]["items"]
+    assert len(parents) == 1
+    children = parents[0]["children"]
+    assert [c["seq"] for c in children["items"]] == [5, 6]
+    assert children["hasMore"] is True

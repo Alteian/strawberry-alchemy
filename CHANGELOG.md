@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolution order: `PrefetchRelated.max_items` → `MaxItems` →
   `NodeConfig.fields[field]` → `NodeConfig.max_items` → `100`.
 
+### Fixed
+
+- Nested list caps apply ACL / prefetch filters **inside** the `ROW_NUMBER`
+  window so `NestedListResult.has_more` reflects authorized rows, not a
+  pre-ACL slice.
+
 ## [0.7.3] — 2026-11-22
 
 ### Added
