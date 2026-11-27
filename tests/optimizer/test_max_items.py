@@ -171,7 +171,7 @@ class TagType(BaseNodeType):
 @strawberry.type
 class ParentType(BaseNodeType):
     access_filter: ClassVar[type[AccessControlFilter]] = OpenAccessFilter
-    config: ClassVar[NodeConfig] = NodeConfig(max_items=2, fields={"tags": 1})
+    node_config: ClassVar[NodeConfig] = NodeConfig(max_items=2, fields={"tags": 1})
 
     title: str | None = strawberry.UNSET
     children: NestedListResult[ChildType] | None = strawberry.UNSET
@@ -184,7 +184,7 @@ class ParentType(BaseNodeType):
 @strawberry.type
 class UnlimitedParentType(BaseNodeType):
     access_filter: ClassVar[type[AccessControlFilter]] = OpenAccessFilter
-    config: ClassVar[NodeConfig] = NodeConfig(max_items=None)
+    node_config: ClassVar[NodeConfig] = NodeConfig(max_items=None)
 
     title: str | None = strawberry.UNSET
     children: NestedListResult[ChildType] | None = strawberry.UNSET
@@ -202,7 +202,7 @@ class OrderedChildType(BaseNodeType):
 @strawberry.type
 class OrderedParentType(BaseNodeType):
     access_filter: ClassVar[type[AccessControlFilter]] = OrderedParentAccessFilter
-    config: ClassVar[NodeConfig] = NodeConfig(max_items=2)
+    node_config: ClassVar[NodeConfig] = NodeConfig(max_items=2)
 
     title: str | None = strawberry.UNSET
     children: NestedListResult[OrderedChildType] | None = strawberry.UNSET
@@ -300,8 +300,8 @@ async def session() -> AsyncGenerator[AsyncSession]:
 
 
 def test_node_config_defaults() -> None:
-    assert BaseNodeType.config.max_items == 100
-    assert BaseNodeType.config.fields == {}
+    assert BaseNodeType.node_config.max_items == 100
+    assert BaseNodeType.node_config.fields == {}
 
 
 def test_node_config_rejects_non_positive() -> None:
@@ -309,6 +309,39 @@ def test_node_config_rejects_non_positive() -> None:
         NodeConfig(max_items=0)
     with pytest.raises(ValueError, match="positive"):
         MaxItems(0)
+
+
+def test_config_classvar_is_not_node_config() -> None:
+    """A ClassVar named ``config`` is ignored — only ``node_config`` counts."""
+    from strawberry_alchemy.types.node_config import lookup_node_config, resolve_max_items
+
+    @strawberry.type
+    class MisnamedConfigType(BaseNodeType):
+        access_filter: ClassVar[type[AccessControlFilter]] = OpenAccessFilter
+        config: ClassVar[NodeConfig] = NodeConfig(max_items=7, fields={"children": 3})
+
+        title: str | None = strawberry.UNSET
+        children: NestedListResult[ChildType] | None = strawberry.UNSET
+
+    # Inherited ``BaseNodeType.node_config`` (default 100), not the misnamed ClassVar.
+    assert lookup_node_config(MisnamedConfigType).max_items == 100
+    assert resolve_max_items(MisnamedConfigType, "children") == 100
+
+
+def test_domain_field_named_config_does_not_shadow_node_config() -> None:
+    """Instance/field ``config`` must not be mistaken for ``NodeConfig``."""
+    from strawberry_alchemy.types.node_config import lookup_node_config, resolve_max_items
+
+    @strawberry.type
+    class DomainConfigType(BaseNodeType):
+        access_filter: ClassVar[type[AccessControlFilter]] = OpenAccessFilter
+        node_config: ClassVar[NodeConfig] = NodeConfig(max_items=11)
+
+        title: str | None = strawberry.UNSET
+        config: dict[str, object] | None = strawberry.UNSET
+
+    assert lookup_node_config(DomainConfigType).max_items == 11
+    assert resolve_max_items(DomainConfigType, "children") == 11
 
 
 @pytest.mark.asyncio
