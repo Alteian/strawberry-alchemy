@@ -640,12 +640,55 @@ class QueryOptimizer:
             return None
         return filter_fn(related_model)
 
+    @staticmethod
+    def _collection_limit_criterion(
+        rel_prop: RelationshipProperty,
+        related_model: type[Any],
+        max_items: int,
+    ) -> Any | None:
+        """Per-parent ROW_NUMBER cap for to-many selectin loads."""
+        if not rel_prop.uselist or max_items <= 0 or rel_prop.secondary is not None:
+            return None
+
+        remote_cols = [remote for _local, remote in rel_prop.local_remote_pairs]
+        if not remote_cols:
+            return None
+
+        pk_cols = list(related_model.__mapper__.primary_key)
+        if len(pk_cols) != 1:
+            return None
+        pk = pk_cols[0]
+
+        order_by = rel_prop.order_by
+        if order_by is None:
+            order_cols: list[Any] = list(pk_cols)
+        elif isinstance(order_by, (list, tuple)):
+            order_cols = list(order_by)
+        else:
+            order_cols = [order_by]
+
+        partition_by: Any = remote_cols[0] if len(remote_cols) == 1 else remote_cols
+        ranked = (
+            select(
+                pk.label("limited_id"),
+                func.row_number().over(partition_by=partition_by, order_by=order_cols).label("rn"),
+            )
+        ).subquery()
+        return pk.in_(select(ranked.c.limited_id).where(ranked.c.rn <= max_items))
+
+    @staticmethod
+    def _selectinload_with_conditions(attr: Any, conditions: list[Any]) -> Any:
+        if not conditions:
+            return selectinload(attr)
+        return selectinload(attr.and_(*conditions))
+
     async def _build_filtered_selectinload(
         self,
         model: type[Any],
         prefetch: PrefetchRelated,
         user_id: Any | None,
         context_user: Any | None = None,
+        max_items: int | None = None,
     ) -> Any | None:
         _, attr = self.get_model_attribute(model, prefetch.relationship)
         if attr is None or not self.is_relationship(attr):
@@ -679,10 +722,12 @@ class QueryOptimizer:
             if acl_clause is not None:
                 conditions.append(acl_clause)
 
-        if not conditions:
-            return selectinload(attr)
+        if max_items is not None:
+            limit_crit = self._collection_limit_criterion(rel_prop, related_model, max_items)
+            if limit_crit is not None:
+                conditions.append(limit_crit)
 
-        return selectinload(attr.and_(*conditions))
+        return self._selectinload_with_conditions(attr, conditions)
 
     def _get_strawberry_type_for_model(self, model: type[Any]) -> type[Any] | None:
         type_name = model.__name__
@@ -750,9 +795,15 @@ class QueryOptimizer:
                     else:
                         # Always try ACL even when context_user is None — filters often deny anonymous.
                         criteria = await self._acl_whereclause_for_model(related_model, context_user)
-                    relationship_loader = (
-                        selectinload(attr.and_(criteria)) if criteria is not None else selectinload(attr)
-                    )
+                    conditions: list[Any] = []
+                    if criteria is not None:
+                        conditions.append(criteria)
+                    max_items = getattr(strawberry_type, "max_items", None) if strawberry_type is not None else None
+                    if max_items is not None:
+                        limit_crit = self._collection_limit_criterion(attr.property, related_model, max_items)
+                        if limit_crit is not None:
+                            conditions.append(limit_crit)
+                    relationship_loader = self._selectinload_with_conditions(attr, conditions)
 
                     nested_load_options = await self.build_query_with_selected_fields(
                         related_model,
@@ -845,8 +896,15 @@ class QueryOptimizer:
             context_user=context_user,
         )
 
+        parent_max_items = getattr(strawberry_type, "max_items", None) if strawberry_type is not None else None
         for prefetch in deps.filtered_prefetches:
-            filtered_opt = await self._build_filtered_selectinload(model, prefetch, user_id, context_user=context_user)
+            filtered_opt = await self._build_filtered_selectinload(
+                model,
+                prefetch,
+                user_id,
+                context_user=context_user,
+                max_items=parent_max_items,
+            )
             if filtered_opt is not None:
                 load_options.append(filtered_opt)
                 if self.analyzer:

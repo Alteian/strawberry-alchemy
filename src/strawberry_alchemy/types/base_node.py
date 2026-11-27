@@ -30,6 +30,7 @@ class BaseNodeType(Node):
 
     access_filter: ClassVar[type[AccessControlFilter] | AccessControlFilter]
     model_class: ClassVar[type[Any]]
+    max_items: ClassVar[int] = 100
     CUSTOM_FILTERS: ClassVar[dict[str, Callable[..., Any]]] = {}
     _custom_filters_registry: ClassVar[dict[type[Any], dict[str, Callable[..., Any]]]] = {}
 
