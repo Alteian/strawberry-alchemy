@@ -49,7 +49,13 @@ await Type.resolve_nodes(info: Info, node_ids: Iterable[str], access_filter=None
 await Type.resolve_list(info: Info, filters=UNSET, **kwargs) -> ListResult[Type]
 await Type.resolve_connection(info: Info, **kwargs) -> OptimizedListConnection[Type]
 Type.from_schema(schema, **kwargs) -> Type
+await resolve_mutation_node(info, Type, id, *, field=None, access_filter=None) -> Type | None
+await resolve_mutation_nodes(info, Type, ids, *, field=None, access_filter=None) -> list[Type | None]
 ```
+
+`resolve_node` / `resolve_nodes` accept `target_field_path=` (nested payload
+selection) and `acquire_lock=` (default `True`). Prefer `resolve_mutation_node`
+after mutation writes when the lock is already held.
 
 ## Optimizer
 

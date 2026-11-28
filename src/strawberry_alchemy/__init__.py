@@ -83,6 +83,8 @@ from strawberry_alchemy.types import (
     OptimizedListConnection,
     PageInfo,
     SliceMetadata,
+    resolve_mutation_node,
+    resolve_mutation_nodes,
 )
 from strawberry_alchemy.utils import (
     camel_to_snake,
@@ -161,6 +163,8 @@ __all__ = (
     "build_recursive_dependency_tree",
     "merge_dependency_trees",
     "normalize_dependency_fields",
+    "resolve_mutation_node",
+    "resolve_mutation_nodes",
     "selection_to_model_fields",
     "schema_from_input",
     "set_rls_guc",

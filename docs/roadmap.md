@@ -18,11 +18,11 @@ for the full history. Highlights:
   `DateFilter`, FilterBuilder boolean/`isnull` coercion fix
 - **0.8.0** — `NodeConfig` / `MaxItems` / `NestedListResult` nested to-many caps
   (default 100, `has_more`, field-level overrides, composite PK)
+- **0.9.1** — mutation payload resolve: `target_field_path` + `acquire_lock=False`,
+  `resolve_mutation_node` helpers
 
 ## Later
 
-- Broader mutation helper ergonomics (resolver integration beyond
-  `prepare_mutation_resources`)
 - Optional OpenTelemetry auto-instrumentation beyond the `on_report` callback
 - More Relay cursor edge-case and permissions mutation e2e coverage as consumers
   surface gaps

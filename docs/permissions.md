@@ -71,6 +71,38 @@ await prepare_mutation_resources(
 Optional `id_fields=` overrides which keys are treated as IDs (default: keys
 ending with `_id`).
 
+### Returning optimized nodes after a write
+
+CQRS-style mutations often call a use case, then need a GraphQL node that
+respects the **payload** selection (`AnnotateCount`, selected columns, …).
+Bare `to_type()` skips the optimizer; default `resolve_node` takes
+`db_execution_lock` again and deadlocks when the mutation member already holds
+it.
+
+Use `resolve_mutation_node` (or `resolve_node(..., acquire_lock=False,
+target_field_path=...)`):
+
+```python
+from strawberry_alchemy import resolve_mutation_node, schema_from_input
+
+@strawberry.mutation
+async def update_company(self, info: Info, input: UpdateInput) -> Payload:
+    command = schema_from_input(UpdateSchema, input)
+    company = await use_case.execute(command)  # application write
+    node = await resolve_mutation_node(
+        info,
+        CompanyType,
+        company.id,
+        field="company",  # Success { company { id employmentCount … } }
+    )
+    return Success(company=node, message="ok")
+```
+
+- Omit `field` when the mutation returns the node type directly (`-> PostType`).
+- Call resolve **after** the write unit of work commits (so the request session
+  sees the new row state).
+- Tenancy / RLS bind stays application-side when annotations need it.
+
 ### Lower-level pieces
 
 | Helper | Role |

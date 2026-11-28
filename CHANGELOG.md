@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-11-28
+
+### Added
+
+- **`BaseNodeType.resolve_node` / `resolve_nodes`** — `target_field_path=` (drill into
+  nested mutation payload selections) and `acquire_lock=` (default `True`; set
+  `False` when the caller already holds `db_execution_lock`).
+- **`resolve_mutation_node` / `resolve_mutation_nodes`** — thin helpers that call
+  resolve with `acquire_lock=False` and optional `field=` path for CQRS-style
+  post-write payload materialization.
+
+### Docs
+
+- Permissions / mutations: returning optimized nodes from mutation resolvers.
+
 ## [0.9.0] — 2026-11-27
 
 ### Changed
@@ -363,7 +378,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schema module** — `BaseSchema` Pydantic base with `dump_for_db()`, `to_type()`, and skip-unloaded-relationships validator.
 - **CI workflow** — lint, test, build via GitHub Actions.
 
-[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Alteian/strawberry-alchemy/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Alteian/strawberry-alchemy/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Alteian/strawberry-alchemy/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/Alteian/strawberry-alchemy/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Alteian/strawberry-alchemy/compare/v0.7.3...v0.8.0

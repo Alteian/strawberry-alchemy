@@ -84,6 +84,8 @@ class BaseNodeType(Node):
         cls,
         info: Info,
         access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+        *,
+        acquire_lock: bool = True,
         **query_kwargs: Any,
     ) -> Any:
         session = await info.context.get_session()
@@ -93,8 +95,15 @@ class BaseNodeType(Node):
             access_filter if access_filter is not None else cls.access_filter,
         )
 
-        async with info.context.db_execution_lock:
+        async def _run() -> Any:
             return await optimizer.optimize_query(model=cls.model_class, strawberry_type=cls, **query_kwargs)
+
+        # Mutations often already hold ``db_execution_lock`` for the whole member;
+        # ``asyncio.Lock`` is not re-entrant — pass ``acquire_lock=False`` there.
+        if acquire_lock:
+            async with info.context.db_execution_lock:
+                return await _run()
+        return await _run()
 
     @classmethod
     async def resolve_node(  # type: ignore[override]  # strawberry-alchemy omits Relay required=; uses optimizer API
@@ -103,8 +112,26 @@ class BaseNodeType(Node):
         *,
         info: Info,
         access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+        target_field_path: str | None = None,
+        acquire_lock: bool = True,
     ) -> Self | None:
-        resolved = await cls.resolve_nodes(info=info, node_ids=[node_id], access_filter=access_filter)
+        """Load one node for the current GraphQL selection.
+
+        ``target_field_path``
+            Drill into a nested selection (e.g. ``\"company\"`` under
+            ``... on UpdateXSuccess { company { ... } }``). Omit when the
+            field's selection *is* this node type.
+        ``acquire_lock``
+            Take ``info.context.db_execution_lock`` (default). Set ``False`` when
+            the caller already holds that lock (typical root mutation members).
+        """
+        resolved = await cls.resolve_nodes(
+            info=info,
+            node_ids=[node_id],
+            access_filter=access_filter,
+            target_field_path=target_field_path,
+            acquire_lock=acquire_lock,
+        )
         return resolved[0] if resolved else None
 
     @classmethod
@@ -113,13 +140,18 @@ class BaseNodeType(Node):
         info: Info,
         node_ids: Iterable[str],
         access_filter: type[AccessControlFilter] | AccessControlFilter | None = None,
+        *,
+        target_field_path: str | None = None,
+        acquire_lock: bool = True,
         **kwargs: Any,
     ) -> list[Self | None]:
         result = await cls._get_optimized_result(
             info,
             access_filter=access_filter,
+            acquire_lock=acquire_lock,
             node_ids=node_ids,
             return_selected_fields=True,
+            target_field_path=target_field_path,
             **kwargs,
         )
         return await map_sqlalchemy_list_to_types(result.items, info, cls, result.selected_fields)
